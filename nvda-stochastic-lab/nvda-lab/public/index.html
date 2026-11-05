@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NVDA Stochastic Lab</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<h1>NVDA Stochastic Lab <small>GBM vs Ornstein-Uhlenbeck</small></h1>
+<section class="card controls">
+  <label>Symbol<input id="sym" value="NVDA"></label>
+  <label>Fit from<input id="start" type="date"></label>
+  <label>Fit to<input id="end" type="date"></label>
+  <label>Horizon (trading days)<input id="hor" type="number" value="126" min="1" max="756"></label>
+  <label>Paths<input id="npaths" type="number" value="5000" min="500" max="20000" step="500"></label>
+  <label class="wide">Price levels ($, comma separated; blank = auto)<input id="levels" placeholder="e.g. 150, 200, 250"></label>
+  <button id="go">Fetch &amp; fit</button><button id="demo" class="alt">Use synthetic demo data</button>
+</section>
+<div id="status"></div>
+<div id="out" hidden>
+  <section class="card"><h2>Fitted parameters</h2><div id="params"></div><p class="note" id="notes"></p></section>
+  <section class="grid2">
+    <div class="card"><h2>GBM forecast fan</h2><canvas id="c1"></canvas></div>
+    <div class="card"><h2>OU forecast fan</h2><canvas id="c2"></canvas></div>
+  </section>
+  <section class="card"><h2>Terminal price distribution</h2><canvas id="c3" class="short"></canvas><div id="quant"></div></section>
+  <section class="card"><h2>Probabilities</h2><div id="probs"></div>
+    <p class="note">"Ends above" = P(S<sub>T</sub> &gt; level). "Touches" = P(price crosses the level at any time before T) — levels above spot count upward touches, below spot downward touches. MC touch uses daily closes; the analytic GBM touch is continuous, so it is slightly higher.</p></section>
+</div>
+</main><script src="model.js"></script><script src="main.js"></script></body></html>

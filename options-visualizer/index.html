@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Options Payoff Lab</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>Options Payoff Lab</h1>
+  <p>Build a stock option position and watch its profit and loss change with price, time and volatility. Prices come from the Black-Scholes model. Stock data is illustrative, not live.</p>
+</header>
+<main>
+  <section class="panel" aria-label="Controls">
+    <label>Stock
+      <select id="ticker"></select></label>
+    <div class="row2">
+      <label>Spot price <input id="spot" type="number" step="0.5" min="1"></label>
+      <label>Volatility % <input id="vol" type="number" step="1" min="1" max="200"></label>
+      <label>Rate % <input id="rate" type="number" step="0.25" min="0" max="20"></label>
+      <label>Days to expiry <input id="dte" type="number" step="1" min="1" max="730"></label>
+    </div>
+    <label>Days passed: <b id="elapsedLbl">0</b>
+      <input id="elapsed" type="range" min="0" value="0"></label>
+    <label>Strategy <select id="strategy"></select></label>
+    <p id="stratDesc" class="note"></p>
+    <div id="legs"></div>
+    <button id="addLeg" type="button">Add leg</button>
+  </section>
+  <section class="viz">
+    <div class="chartwrap"><canvas id="main" aria-label="Profit and loss chart"></canvas></div>
+    <p class="legend"><i class="s1"></i>P/L at expiry <i class="s2"></i>P/L today (after days passed) <i class="s3"></i>Spot. Hover the chart to read values.</p>
+    <div id="metrics" class="metrics"></div>
+  </section>
+</main>
+<section class="learn">
+  <h2>How call and put options work</h2>
+  <p>An option is a contract on 100 shares (charts show per share). The buyer pays a premium for a right; the seller collects it and takes on the obligation. Premium = intrinsic value (what exercising would be worth now) + time value (the chance of becoming more valuable before expiry).</p>
+  <div class="blocks" id="blocks"></div>
+  <div class="two">
+    <article>
+      <h3>Call option</h3>
+      <p>The right to <b>buy</b> shares at the strike price K. It gains value when the stock rises.</p>
+      <p class="f">Payoff at expiry = max(S − K, 0)</p>
+      <ul>
+        <li><b>Long call:</b> loss limited to the premium; profit unlimited above breakeven K + premium.</li>
+        <li><b>Short call:</b> profit limited to the premium; loss unlimited if the stock rallies. Breakeven is also K + premium.</li>
+        <li><b>Delta</b> 0 to +1; rises toward 1 as the call goes deep in the money.</li>
+      </ul>
+    </article>
+    <article>
+      <h3>Put option</h3>
+      <p>The right to <b>sell</b> shares at the strike price K. It gains value when the stock falls.</p>
+      <p class="f">Payoff at expiry = max(K − S, 0)</p>
+      <ul>
+        <li><b>Long put:</b> loss limited to the premium; max profit (K − premium) × 100 if the stock goes to zero. Breakeven is K − premium.</li>
+        <li><b>Short put:</b> profit limited to the premium; loss large but capped at stock reaching zero.</li>
+        <li><b>Delta</b> −1 to 0; falls toward −1 as the put goes deep in the money.</li>
+      </ul>
+    </article>
+  </div>
+  <h3>The Greeks (shown per share for your position)</h3>
+  <dl>
+    <dt>Delta</dt><dd>Change in option price for a $1 move in the stock. Also a rough probability of finishing in the money.</dd>
+    <dt>Gamma</dt><dd>How fast delta changes. Highest near the strike close to expiry. Long options have positive gamma.</dd>
+    <dt>Theta</dt><dd>Value lost per day from time passing. Negative for buyers, positive for sellers. Accelerates near expiry.</dd>
+    <dt>Vega</dt><dd>Change in price for a 1-point rise in volatility. Buyers benefit from higher volatility.</dd>
+    <dt>Rho</dt><dd>Change in price for a 1-point rise in interest rates. Calls gain, puts lose. Usually the smallest effect.</dd>
+  </dl>
+  <p class="note">Educational tool, not investment advice. Black-Scholes assumes European exercise, constant volatility and no dividends.</p>
+</section>
+<script src="app.js"></script>
+</body>
+</html>

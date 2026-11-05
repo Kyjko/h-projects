@@ -1,0 +1,7 @@
+{
+  "name": "nvda-stochastic-lab",
+  "version": "1.0.0",
+  "description": "Fit GBM and OU to NVDA history and forecast level probabilities (vanilla JS).",
+  "scripts": { "start": "node server.js", "test": "node test.js" },
+  "engines": { "node": ">=18" }
+}

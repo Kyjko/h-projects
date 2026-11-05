@@ -1,0 +1,23 @@
+{
+  "http_port": 8080,
+
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "root",
+    "password": "icemanN0777",
+    "database": "stocks_db"
+  },
+
+  "tickers_file": "config/TICKERS.csv",
+
+  "update_interval_ms": 300000,
+
+  "default_timeframe": "max",
+
+  "data_source": {
+    "stooq_historical_url": "https://stooq.com/q/d/l/",
+    "stooq_quote_url": "https://stooq.com/q/l/",
+    "yahoo_quote_url": "https://query1.finance.yahoo.com/v7/finance/quote"
+  }
+}
