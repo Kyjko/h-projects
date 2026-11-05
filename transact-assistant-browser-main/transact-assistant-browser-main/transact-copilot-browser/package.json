@@ -1,0 +1,11 @@
+{
+  "name": "transact-copilot-browser",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A local BrowserWeb-inspired interface for Transact MCP and Copilot CLI",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  }
+}

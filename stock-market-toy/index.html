@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STOCK – order book toy market</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header>
+  <h1>STOCK<br><small style="color:var(--dim);font-weight:400">toy order-book market</small></h1>
+  <div><span id="price">100.00</span><span id="chg"></span></div>
+  <div class="ctl">Clearing every <input id="speed" type="range" min="0.5" max="10" step="0.5" value="5"><b id="speedv">5s</b>
+    <button id="pause">Pause</button></div>
+  <div class="ctl">Candle <select id="tf"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="30">30 s</option><option value="60">1 min</option><option value="300">5 min</option></select>
+    <button id="csv1">CSV: prices</button><button id="csv2">CSV: candles</button></div>
+</header>
+<div id="barwrap"><div id="bar"></div></div>
+<details open><summary>How this works</summary>
+  Agents drop BUY/SELL orders into the book during each window. A <b>limit</b> order sets a price limit; a <b>market</b> order accepts any price.
+  At the end of the window the market picks the one price where the most shares can trade, matches buyers (willing to pay ≥ price) with sellers (willing to accept ≤ price),
+  and that price becomes the new price of STOCK. Leftover limit orders stay in the book for a few rounds. Try the whale buttons, or place your own orders, and watch the price react.
+  Negative shares = short position. Unlimited capital is assumed.</details>
+<main>
+  <div class="col">
+    <div class="panel"><h2>Price at each clearing (line)</h2><canvas id="line"></canvas></div>
+    <div class="panel"><h2>Candlesticks</h2><canvas id="candles"></canvas></div>
+  </div>
+  <div class="col">
+    <div class="panel"><h2>Order book (asks above, bids below)</h2><div id="book"></div></div>
+    <div class="panel"><h2>Your order</h2>
+      <div class="form"><select id="side"><option>BUY</option><option>SELL</option></select>
+        <select id="otype"><option>LIMIT</option><option>MARKET</option></select>
+        <input id="qty" type="number" min="1" value="10" title="Quantity"><input id="lprice" type="number" step="0.01" title="Limit price">
+        <button id="send">Send order</button></div><p id="msg"></p></div>
+    <div class="panel"><h2>Whale agent</h2>
+      <div class="ctl">Size <input id="wsize" type="number" value="200" min="1" style="width:80px"> for <input id="wrounds" type="number" value="5" min="1" style="width:56px"> rounds</div>
+      <div class="ctl" style="margin-top:8px"><button id="wbuy">Buy burst</button><button id="wsell">Short burst</button><button id="wstop">Stop</button></div></div>
+  </div>
+  <div class="panel full"><h2>Agents and holdings</h2><table id="agents"></table></div>
+  <div class="panel full"><h2>Recent clearings</h2><table id="log"></table></div>
+</main>
+<script src="js/config.js"></script><script src="js/agents.js"></script><script src="js/market.js"></script>
+<script src="js/charts.js"></script><script src="js/main.js"></script>
+</body></html>

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#dce5e8">
+    <title>Transact Browser</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/styles/design-document.css">
+    <script type="module" src="/js/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Transact Browser home">
+          <span class="brand-mark">T24</span>
+          <span><strong>Transact</strong><small>BROWSER</small></span>
+        </a>
+        <div class="topbar-center">
+          <span class="environment-dot"></span>
+          <span id="connection-label">Checking connection…</span>
+        </div>
+        <div class="topbar-right">
+          <button id="toggle-design-document" class="assistant-toggle" type="button" aria-pressed="false">
+            Edit design document
+          </button>
+          <button id="toggle-designer" class="assistant-toggle" type="button" aria-pressed="false">
+            Design new record
+          </button>
+          <button id="toggle-authorise-record" class="assistant-toggle" type="button" aria-pressed="false">
+            Authorise record
+          </button>
+          <button id="toggle-theme" class="assistant-toggle theme-toggle" type="button" aria-pressed="false" aria-label="Switch to dark mode">
+            Dark mode
+          </button>
+          <button id="toggle-chat" class="assistant-toggle" type="button" aria-expanded="false" aria-controls="copilot-panel">
+            Assistant
+          </button>
+        </div>
+      </header>
+
+      <div class="workspace-shell chat-hidden">
+        <aside class="nav-rail" aria-label="Transact tools">
+          <div class="nav-heading">WORKSPACE</div>
+          <button class="nav-item active" type="button" data-action="context">
+            <span class="nav-icon">⌂</span> Overview
+          </button>
+          <div class="nav-heading nav-heading-spaced">EXPLORE</div>
+          <details class="nav-menu">
+            <summary class="nav-item"><span class="nav-icon">♙</span> User menu</summary>
+            <div class="nav-submenu">
+              <button class="nav-subitem" type="button" data-menu-page="find-customer">Find Customer</button>
+              <button class="nav-subitem" type="button" data-menu-page="find-account">Find Account</button>
+              <button class="nav-subitem" type="button" data-menu-page="find-arrangement">Find Arrangement</button>
+              <button class="nav-subitem" type="button" data-menu-page="locked-records">View Locked Records</button>
+              <button class="nav-subitem" type="button" data-menu-page="customer-versions">View CUSTOMER Versions</button>
+              <button class="nav-subitem" type="button" data-menu-page="payments-enquiry">Payments Enquiry</button>
+              <button class="nav-subitem" type="button" data-menu-page="customer-loans">Find Customer Loans</button>
+              <button class="nav-subitem" type="button" data-menu-page="enquiries">Enquiries</button>
+            </div>
+          </details>
+          <details class="nav-menu">
+            <summary class="nav-item"><span class="nav-icon">⚙</span> Admin menu</summary>
+            <div class="nav-submenu">
+              <button class="nav-subitem" type="button" data-menu-page="configure-products">Configure Products</button>
+              <button class="nav-subitem" type="button" data-menu-page="manage-tsa-service">Manage TSA Service</button>
+            </div>
+          </details>
+          <details class="nav-menu">
+            <summary class="nav-item"><span class="nav-icon">✦</span> AI tools</summary>
+            <div class="nav-submenu">
+              <button class="nav-subitem" type="button" data-menu-page="generate-eson">Generate ESON</button>
+              <button class="nav-subitem" type="button" data-menu-page="manage-skills">Manage Skills</button>
+            </div>
+          </details>
+          <div class="nav-heading nav-heading-spaced">AVAILABLE TOOLS</div>
+          <div class="tool-group">
+            <span class="tool-group-label">READ</span>
+            <span class="tool-chip">ofs-read</span><span class="tool-chip">ofs-enquiry</span>
+            <span class="tool-chip">app-fields / app-schema</span>
+            <span class="tool-chip">customer &amp; account lookup</span>
+            <span class="tool-chip">arrangement &amp; AA product</span>
+            <span class="tool-chip">transact-context</span>
+          </div>
+          <div class="tool-group">
+            <span class="tool-group-label">WRITE · CONFIRM EACH REQUEST</span>
+            <span class="tool-chip">ofs-input / authorise</span>
+            <span class="tool-chip">funds-transfer</span>
+            <span class="tool-chip">reverse / delete</span>
+            <span class="tool-chip">aa-arr-activity</span>
+          </div>
+          <div class="sidebar-note">
+            <span class="note-icon">i</span>
+            <span>Data is read from your local Transact MCP connection. Nothing is stored by this interface.</span>
+          </div>
+        </aside>
+
+        <main class="main-workspace">
+          <section id="record-browser-view" class="browser-view">
+          <div class="breadcrumb"><span>WORKSPACE</span><span class="crumb-slash">/</span><span id="crumb-app">APPLICATION</span></div>
+          <section class="context-bar" aria-label="Current record context">
+            <label class="context-field">
+              <span>APPLICATION</span>
+              <input id="application-input" type="text" placeholder="e.g. CUSTOMER or OFS..." autocomplete="off" spellcheck="false">
+            </label>
+            <span class="context-separator">/</span>
+            <label class="context-field record-context">
+              <span>RECORD ID</span>
+              <input id="record-input" type="text" placeholder="Record ID or wildcard, e.g. AA.ARR..." autocomplete="off" spellcheck="false">
+            </label>
+            <button id="open-record" class="button button-primary" type="button">Open record</button>
+            <button id="list-records" class="button button-secondary" type="button">List records</button>
+          </section>
+          <div id="request-status" class="request-status" role="status" aria-live="polite" hidden>
+            <span class="request-spinner" aria-hidden="true"></span>
+            <span class="request-status-copy">
+              <strong>Waiting for Transact Assistant</strong>
+              <span id="request-status-detail">Contacting Transact tools…</span>
+            </span>
+            <span id="request-elapsed" class="request-elapsed">0s</span>
+          </div>
+
+          <section class="record-workspace" aria-live="polite">
+            <div class="record-heading">
+              <div>
+                <p class="eyebrow">APPLICATION RECORD</p>
+                <h1 id="record-title">Your Transact workspace</h1>
+                <p id="record-subtitle" class="record-subtitle">Select an application and record, or use the Explore menu.</p>
+              </div>
+              <div class="record-actions">
+                <span id="record-state" class="state-badge">READY</span>
+                <button id="copy-record" class="icon-button" type="button" title="Copy record data" aria-label="Copy record data" disabled>▣</button>
+              </div>
+            </div>
+            <div id="record-view" class="scroll_contract_screen empty-record">
+              <div class="empty-state">
+                <div class="empty-mark">T24</div>
+                <h2>Transact Browser</h2>
+                <p>Enter an application and record ID, or select an option from the Explore menu.</p>
+                <div class="suggestion-row">
+                  <button type="button" class="suggestion" data-action="context">Transact help</button>
+                  <button type="button" class="suggestion" data-action="list">List application records</button>
+                </div>
+              </div>
+            </div>
+            <div class="record-footer">
+              <span>LOCAL TRANSACT CONNECTION</span>
+              <span><i class="footer-dot"></i> Workbench ready</span>
+            </div>
+          </section>
+          </section>
+
+          <section id="new-record-view" class="designer-view" hidden>
+            <div class="breadcrumb"><span>WORKSPACE</span><span class="crumb-slash">/</span><span>DESIGN NEW RECORD</span></div>
+            <div class="designer-title">
+              <div>
+                <p class="eyebrow">TRANSACT RECORD INPUT</p>
+                <h1>Design new record</h1>
+                <p class="record-subtitle">Load an application schema, complete its inputtable fields, then validate before submitting.</p>
+              </div>
+            </div>
+            <div class="designer-meta">
+              <label class="designer-meta-field">
+                <span>APPLICATION</span>
+                <input id="designer-application" type="text" placeholder="e.g. CUSTOMER" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="designer-meta-field">
+                <span>RECORD ID</span>
+                <input id="designer-record-id" type="text" placeholder="New ID or existing ID to amend" autocomplete="off" spellcheck="false">
+              </label>
+              <button id="load-designer-schema" class="button button-secondary" type="button">Load application</button>
+            </div>
+            <div class="designer-copy">
+              <label class="designer-meta-field">
+                <span>COPY FROM EXISTING RECORD</span>
+                <input id="designer-copy-id" type="text" placeholder="Existing ID in this application" autocomplete="off" spellcheck="false">
+              </label>
+              <button id="copy-source-record" class="button button-secondary" type="button" disabled>Copy record details</button>
+              <span class="designer-help">Only inputtable fields are copied into editable controls; managed fields remain read-only.</span>
+            </div>
+            <div class="designer-fields-toolbar">
+              <strong id="designer-fields-title">Application fields</strong>
+              <input id="designer-field-search" type="search" placeholder="Filter fields…" aria-label="Filter fields" disabled>
+              <span id="designer-schema-state" class="designer-schema-state">Enter an application to load its fields.</span>
+            </div>
+            <div id="designer-fields" class="designer-fields" aria-live="polite">
+              <p class="designer-empty">The application field catalog will appear here.</p>
+            </div>
+            <div class="designer-actions">
+              <span id="designer-validation" class="designer-validation" role="status" aria-live="polite">Validate the record with Transact before submitting.</span>
+              <div>
+                <button id="validate-new-record" class="button button-secondary" type="button" disabled>Validate</button>
+                <button id="submit-new-record" class="button button-primary" type="button" disabled>Submit record</button>
+              </div>
+            </div>
+          </section>
+
+          <section id="authorise-record-view" class="authorise-view" hidden>
+            <div class="breadcrumb"><span>WORKSPACE</span><span class="crumb-slash">/</span><span>AUTHORISE RECORD</span></div>
+            <div class="designer-title">
+              <div>
+                <p class="eyebrow">TRANSACT RECORD APPROVAL</p>
+                <h1>Authorise record</h1>
+                <p class="record-subtitle">List unauthorised records or review a specific record before approving it.</p>
+              </div>
+            </div>
+            <div class="authorise-search">
+              <label class="designer-meta-field">
+                <span>APPLICATION</span>
+                <input id="authorise-application" type="text" placeholder="e.g. OFS.SOURCE" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="designer-meta-field">
+                <span>RECORD ID (OPTIONAL)</span>
+                <input id="authorise-record-id" type="text" placeholder="Enter an unauthorised record ID" autocomplete="off" spellcheck="false">
+              </label>
+              <button id="authorise-record-button" class="button button-primary" type="button">Review &amp; Authorise</button>
+              <button id="list-unauthorised-records" class="button button-secondary" type="button">List unauthorised records</button>
+            </div>
+            <p id="authorise-status" class="authorise-status" role="status" aria-live="polite"></p>
+            <div id="authorise-results" class="authorise-results scroll_contract_screen" aria-live="polite"></div>
+            <section id="authorise-review" class="authorise-review" hidden aria-live="polite"></section>
+          </section>
+
+          <section id="design-document-view" class="design-document-view" hidden>
+            <div class="breadcrumb"><span>WORKSPACE</span><span class="crumb-slash">/</span><span>EDIT DESIGN DOCUMENT</span></div>
+            <div class="designer-title">
+              <div>
+                <p class="eyebrow">TRANSACT CONFIGURATION DOCUMENTATION</p>
+                <h1>Edit design document</h1>
+                <p class="record-subtitle">Upload a Word document and choose recent Transact record changes to incorporate.</p>
+              </div>
+            </div>
+            <div class="design-document-grid">
+              <section class="design-document-card" aria-labelledby="amendments-heading">
+                <div class="design-document-card-heading">
+                  <div>
+                    <h2 id="amendments-heading">Recent record amendments</h2>
+                    <p>Select one or more of the latest five records created or amended by this web app.</p>
+                  </div>
+                  <button id="refresh-amendments" class="button button-secondary" type="button">Refresh</button>
+                </div>
+                <div id="recent-amendments" class="recent-amendments" aria-live="polite">
+                  <p class="design-document-empty">Loading recent amendments…</p>
+                </div>
+                <div class="direct-record-picker">
+                  <h3>Add another Transact record</h3>
+                  <p>Enter any application and exact record ID; its current details will be read when the document is edited.</p>
+                  <div class="direct-record-fields">
+                    <label class="designer-meta-field">
+                      <span>APPLICATION</span>
+                      <input id="document-record-application" type="text" placeholder="e.g. CUSTOMER" autocomplete="off" spellcheck="false">
+                    </label>
+                    <label class="designer-meta-field">
+                      <span>RECORD ID</span>
+                      <input id="document-record-id" type="text" placeholder="Exact record ID" autocomplete="off" spellcheck="false">
+                    </label>
+                    <button id="add-document-record" class="button button-secondary" type="button">Add record</button>
+                  </div>
+                </div>
+              </section>
+              <section class="design-document-card document-upload-card" aria-labelledby="document-upload-heading">
+                <div class="design-document-card-heading">
+                  <div>
+                    <h2 id="document-upload-heading">Design document</h2>
+                    <p>The original document is kept unchanged; the edited copy is downloadable.</p>
+                  </div>
+                </div>
+                <label class="docx-dropzone" for="design-document-file">
+                  <span class="docx-mark">DOCX</span>
+                  <strong id="design-document-filename">Choose a .docx file</strong>
+                  <span>Maximum upload size: 24 MB</span>
+                </label>
+                <input id="design-document-file" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+                <label class="screenshot-option">
+                  <input id="insert-record-screenshots" type="checkbox">
+                  <span class="screenshot-check"></span>
+                  <span><strong>Insert record screenshots</strong><small>Off by default; adds extra rendering and image insertion work.</small></span>
+                </label>
+                <button id="edit-design-document" class="button button-primary document-edit-button" type="button" disabled>Edit document with Assistant</button>
+                <section class="document-assistant-chat" aria-labelledby="document-assistant-heading">
+                  <h3 id="document-assistant-heading">Editing instructions for Assistant</h3>
+                  <p>Describe where and how the selected record details should be added, for example: “Add the CUSTOMER fields to section 2.1.”</p>
+                  <label class="document-instructions-label" for="document-edit-instructions">What should the Assistant change?</label>
+                  <textarea id="document-edit-instructions" rows="3" maxlength="6000" placeholder="Specify sections, placement, wording, or formatting…"></textarea>
+                  <div id="document-assistant-feed" class="document-assistant-feed" role="log" aria-live="polite" aria-relevant="additions text">
+                    <p class="document-chat-empty">The Assistant’s progress and final summary will appear here after you start editing.</p>
+                  </div>
+                </section>
+                <p id="design-document-status" class="design-document-status" role="status" aria-live="polite">Choose a document and at least one amendment.</p>
+                <a id="download-edited-document" class="button button-secondary document-download" hidden>Download edited document</a>
+              </section>
+            </div>
+          </section>
+
+          <section id="explorer-view" class="explorer-view" hidden>
+            <div class="breadcrumb"><span>WORKSPACE</span><span class="crumb-slash">/</span><span id="explorer-crumb">USER MENU</span></div>
+            <div class="designer-title">
+              <div>
+                <p class="eyebrow">TRANSACT WORKSPACE</p>
+                <h1 id="explorer-title">Find Customer</h1>
+                <p id="explorer-description" class="record-subtitle"></p>
+              </div>
+            </div>
+            <div id="explorer-controls" class="explorer-controls"></div>
+            <p id="explorer-status" class="explorer-status" role="status" aria-live="polite"></p>
+            <div id="explorer-results" class="explorer-results scroll_contract_screen" aria-live="polite"></div>
+          </section>
+        </main>
+
+        <aside id="copilot-panel" class="copilot-panel" aria-label="Transact assistant">
+          <div class="copilot-header">
+            <div class="copilot-title">
+              <span class="copilot-avatar">T</span>
+              <div><strong>Transact Assistant</strong><small>Natural-language enquiry</small></div>
+            </div>
+            <div class="assistant-actions">
+              <button id="clear-chat" class="icon-button" type="button" title="Clear conversation" aria-label="Clear conversation">Clear</button>
+              <button id="close-chat" class="icon-button" type="button" title="Hide assistant" aria-label="Hide assistant">×</button>
+            </div>
+          </div>
+          <div class="assistant-context">
+            <span class="context-pulse"></span>
+            <span id="assistant-context-label">No application selected</span>
+          </div>
+          <div id="assistant-design-note" class="assistant-design-note" hidden>Design assistance is suggestion-only. The assistant will not change this form or submit records.</div>
+          <div id="assistant-document-note" class="assistant-design-note" hidden>Chat offers suggestions only. Use “Edit document with Assistant” to start a document-editing job.</div>
+          <div id="chat-feed" class="chat-feed" aria-live="polite">
+            <div class="welcome-message">
+              <p>Enter an enquiry about Transact records, applications, customers, or AA products.</p>
+              <button type="button" class="prompt-suggestion" data-action="context">Transact help</button>
+              <button type="button" class="prompt-suggestion" data-action="application">Show application fields</button>
+            </div>
+          </div>
+          <form id="chat-form" class="composer">
+            <div class="composer-wrap">
+              <textarea id="message-input" rows="2" maxlength="6000" placeholder="Ask the Transact Assistant…" aria-label="Request to Transact Assistant"></textarea>
+              <button id="send-button" class="send-button" type="submit" aria-label="Send request">
+                <span>↑</span>
+              </button>
+            </div>
+            <label class="write-permission">
+              <input id="write-confirmed" type="checkbox">
+              <span class="permission-check"></span>
+              <span>Permit write tools for this request only</span>
+            </label>
+            <p class="composer-hint">Changes require explicit permission. Review the request before sending.</p>
+          </form>
+        </aside>
+      </div>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
