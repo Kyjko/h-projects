@@ -1,0 +1,101 @@
+.diagnostics-toggle {
+  border-color: #e0a947;
+  background: #58472c;
+  color: #fff1ce;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgb(224 169 71 / 18%);
+}
+.diagnostics-toggle:hover,
+.diagnostics-toggle[aria-pressed="true"] { border-color: #ffd273; background: #765a2c; }
+.diagnostics-toggle > span { color: #ffd273; font-size: 14px; }
+.diagnostic-view { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; gap: 12px; overflow: auto; padding: 18px; }
+.diagnostic-view[hidden] { display: none; }
+.diagnostic-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.diagnostic-title h1 { margin: 0 0 5px; }
+.diagnostic-title-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.diagnostic-last-run { margin: 0; color: #68777e; font: 11px Calibri, Arial, sans-serif; }
+.diagnostic-checks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.diagnostic-auth-panel { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 15px; border: 1px solid #d5bd85; border-left: 4px solid #c8973e; background: #fffaf0; }
+.diagnostic-auth-panel h2 { margin: 0 0 5px; color: #4b4c42; font: 600 14px Calibri, Arial, sans-serif; }
+.diagnostic-auth-panel p { margin: 4px 0 0; color: #66747a; font: 11px/1.45 Calibri, Arial, sans-serif; }
+.diagnostic-auth-panel code { color: #304b5a; font: 10px Consolas, monospace; }
+.diagnostic-auth-status.connected { color: #26734f; font-weight: 700; }
+.diagnostic-auth-status.unauthenticated { color: #9c3d37; font-weight: 700; }
+.diagnostic-auth-panel .button { flex: 0 0 auto; }
+.diagnostic-check { min-width: 0; padding: 13px; border: 1px solid #cbd6d8; border-left: 4px solid #87979d; border-radius: 4px; background: #fff; }
+.diagnostic-check.connected { border-left-color: #298c62; }
+.diagnostic-check.failed, .diagnostic-check.unauthenticated { border-left-color: #c04a43; }
+.diagnostic-check.unavailable { border-left-color: #d1972c; }
+.diagnostic-check-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.diagnostic-check h2 { margin: 0; color: #344b58; font: 600 14px Calibri, Arial, sans-serif; }
+.diagnostic-badge { flex: 0 0 auto; padding: 3px 6px; border-radius: 10px; background: #e8edef; color: #5b6b72; font: 700 9px Calibri, Arial, sans-serif; }
+.diagnostic-check.connected .diagnostic-badge { background: #e1f3e9; color: #246746; }
+.diagnostic-check.failed .diagnostic-badge, .diagnostic-check.unauthenticated .diagnostic-badge { background: #fae7e5; color: #8c3732; }
+.diagnostic-check.unavailable .diagnostic-badge { background: #fff0d3; color: #755316; }
+.diagnostic-detail { margin: 8px 0 0; color: #5a6b72; font: 12px/1.5 Calibri, Arial, sans-serif; }
+.diagnostic-config-heading h2 { margin: 0 0 4px; color: #344b58; font: 600 16px Calibri, Arial, sans-serif; }
+.diagnostic-config-heading p { margin: 0; color: #6b7a80; font: 11px Calibri, Arial, sans-serif; }
+.diagnostic-configuration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.diagnostic-config-card { min-width: 0; padding: 14px; border: 1px solid #cbd6d8; border-radius: 4px; background: #fff; }
+.diagnostic-config-card h2 { margin: 0 0 8px; color: #344b58; font: 600 14px Calibri, Arial, sans-serif; }
+.diagnostic-config-summary { margin: 5px 0; color: #52646c; font: 11px/1.5 Calibri, Arial, sans-serif; overflow-wrap: anywhere; }
+.diagnostic-config-file { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 8px 0; padding: 9px; border: 1px solid #e0e7e8; background: #f7f9f9; }
+.diagnostic-config-file-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.diagnostic-config-file-info strong { color: #435761; font: 700 11px Calibri, Arial, sans-serif; }
+.diagnostic-config-file-info code { color: #304b5a; font: 10px/1.4 Consolas, monospace; overflow-wrap: anywhere; }
+.diagnostic-config-file-info span { color: #6c7a80; font: 10px/1.45 Calibri, Arial, sans-serif; }
+.diagnostic-file-state { flex: 0 0 auto; color: #78868c; font: 700 9px Calibri, Arial, sans-serif; }
+.diagnostic-file-state.present { color: #287c57; }
+.diagnostic-settings { margin: 10px 0; padding-left: 19px; color: #586970; font: 11px/1.5 Calibri, Arial, sans-serif; }
+.diagnostic-settings li + li { margin-top: 5px; }
+.diagnostic-settings code { color: #304b5a; font: 10px Consolas, monospace; }
+.diagnostic-config-note, .diagnostic-config-empty { margin: 8px 0 0; color: #738087; font: 10px/1.5 Calibri, Arial, sans-serif; }
+
+:root[data-theme="dark"] .diagnostics-toggle { border-color: #d7a94e; background: #4a3b25; color: #fff1ce; }
+:root[data-theme="dark"] .diagnostics-toggle:hover,
+:root[data-theme="dark"] .diagnostics-toggle[aria-pressed="true"] { background: #644c27; }
+:root[data-theme="dark"] .diagnostic-check,
+:root[data-theme="dark"] .diagnostic-config-card { border-color: #465963; background: #202d36; }
+:root[data-theme="dark"] .diagnostic-auth-panel { border-color: #796943; background: #342d1e; }
+:root[data-theme="dark"] .diagnostic-auth-panel h2 { color: #e0e8ec; }
+:root[data-theme="dark"] .diagnostic-auth-panel p { color: #c0ccd2; }
+:root[data-theme="dark"] .diagnostic-auth-panel code { color: #d4e5ef; }
+:root[data-theme="dark"] .diagnostic-auth-status.connected { color: #90d9b2; }
+:root[data-theme="dark"] .diagnostic-auth-status.unauthenticated { color: #ffc0b8; }
+:root[data-theme="dark"] .diagnostic-check { border-left-color: #87979d; }
+:root[data-theme="dark"] .diagnostic-check.connected { border-left-color: #53b282; }
+:root[data-theme="dark"] .diagnostic-check.failed,
+:root[data-theme="dark"] .diagnostic-check.unauthenticated { border-left-color: #df7067; }
+:root[data-theme="dark"] .diagnostic-check.unavailable { border-left-color: #e1b254; }
+:root[data-theme="dark"] .diagnostic-check h2,
+:root[data-theme="dark"] .diagnostic-config-heading h2,
+:root[data-theme="dark"] .diagnostic-config-card h2 { color: #e0e8ec; }
+:root[data-theme="dark"] .diagnostic-detail,
+:root[data-theme="dark"] .diagnostic-config-summary,
+:root[data-theme="dark"] .diagnostic-settings,
+:root[data-theme="dark"] .diagnostic-last-run { color: #c0ccd2; }
+:root[data-theme="dark"] .diagnostic-config-heading p,
+:root[data-theme="dark"] .diagnostic-config-file-info span,
+:root[data-theme="dark"] .diagnostic-config-note,
+:root[data-theme="dark"] .diagnostic-config-empty { color: #aab8c0; }
+:root[data-theme="dark"] .diagnostic-config-file { border-color: #465963; background: #17232c; }
+:root[data-theme="dark"] .diagnostic-config-file-info strong,
+:root[data-theme="dark"] .diagnostic-config-file-info code,
+:root[data-theme="dark"] .diagnostic-settings code { color: #d4e5ef; }
+:root[data-theme="dark"] .diagnostic-badge { background: #33434d; color: #d2dde2; }
+:root[data-theme="dark"] .diagnostic-check.connected .diagnostic-badge { background: #244b39; color: #b7eed0; }
+:root[data-theme="dark"] .diagnostic-check.failed .diagnostic-badge,
+:root[data-theme="dark"] .diagnostic-check.unauthenticated .diagnostic-badge { background: #512e2c; color: #ffd1cc; }
+:root[data-theme="dark"] .diagnostic-check.unavailable .diagnostic-badge { background: #4a3b25; color: #ffe4a8; }
+
+@media (max-width: 1000px) {
+  .diagnostic-checks { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .diagnostics-toggle { width: 35px; height: 32px; justify-content: center; padding: 0; font-size: 0 !important; }
+  .diagnostics-toggle > span { font-size: 16px; }
+  .diagnostic-view { padding: 12px; }
+  .diagnostic-title { flex-direction: column; }
+  .diagnostic-auth-panel { align-items: flex-start; flex-direction: column; }
+  .diagnostic-configuration { grid-template-columns: 1fr; }
+}

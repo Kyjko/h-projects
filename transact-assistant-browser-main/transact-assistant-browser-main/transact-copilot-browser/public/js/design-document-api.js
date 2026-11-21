@@ -27,7 +27,7 @@ export async function editDesignDocument({ file, amendmentIds, records, screensh
         filename: file.name,
         amendmentIds,
         records,
-        screenshots,
+        screenshot: screenshots,
         instructions,
       }),
       signal: controller.signal,

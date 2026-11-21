@@ -1,0 +1,27 @@
+transport = "direct-fork"
+
+[ofs]
+user     = "OFSUSER"
+password = "OFSPWD"
+company  = "CO.CODE"
+
+[ofs.authorizer]
+user	 = "AUTHUSER"
+password = "AUTHPWD"
+company	 = "CO.CODE"	
+
+[direct_fork]
+program		=	"C:\\path\\to\\TAFJ\\tRun"
+working_dir	=	"C:\\path\\to\\T24\\UD"
+args		=	["tSS", "GCS"]
+
+[network_listener]
+enabled        = true
+address        = "127.0.0.1"
+port           = 9189
+read_timeout   = "30s"
+write_timeout  = "60s"
+shutdown_grace = "5s"
+
+[wire_trace]
+level = "full"

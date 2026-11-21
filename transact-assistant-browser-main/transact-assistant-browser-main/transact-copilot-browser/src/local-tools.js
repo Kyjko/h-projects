@@ -5,6 +5,7 @@ const MAX_SKILL_FILES = 2000;
 const MAX_SKILL_FILE_BYTES = 1024 * 1024;
 const MAX_REFERENCE_RESULTS = 30;
 const MAX_REFERENCE_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_REFERENCE_EXAMPLE_BYTES = 256 * 1024;
 const MAX_ESON_FILE_BYTES = 2 * 1024 * 1024;
 
 function safeWorkspacePath(workspaceRoot, relativePath) {
@@ -197,15 +198,74 @@ export async function findReferenceEson(workspaceRoot, records) {
   return matches;
 }
 
-export function buildEsonPrompt(records, skill = "") {
+export async function findReferenceEsonExamples(workspaceRoot, records) {
+  const referenceRoot = safeWorkspacePath(workspaceRoot, "reference_eson");
+  await assertNoSymlinkComponents(workspaceRoot, referenceRoot);
+  const applications = [...new Set(records.map(({ application }) => application.toUpperCase()))];
+  const paths = await walkFiles(referenceRoot, { extension: ".eson", maxFiles: 20000 });
+  const examples = [];
+  let totalBytes = 0;
+  for (const application of applications) {
+    const relativePath = paths.find((candidate) => {
+      const key = path.basename(candidate).split("!")[0].toUpperCase();
+      return key.endsWith(`.${application}`);
+    });
+    if (!relativePath) continue;
+    const absolutePath = safeWorkspacePath(referenceRoot, relativePath);
+    const info = await lstat(absolutePath);
+    if (!info.isFile() || info.isSymbolicLink()
+        || info.size > MAX_REFERENCE_FILE_BYTES
+        || totalBytes + info.size > MAX_REFERENCE_EXAMPLE_BYTES) continue;
+    const content = await readFile(absolutePath, "utf8");
+    examples.push({
+      application,
+      filename: path.basename(relativePath),
+      content,
+    });
+    totalBytes += info.size;
+  }
+  return examples;
+}
+
+export function buildEsonPrompt(records, skill = "", referenceExamples = []) {
   return [
     "Generate Transact ESON text for each requested live record using the configured transact-mcp tools.",
-    "Read every requested record with ofs-read. Never invent or omit field values; preserve canonical application/field names, repeat positions, casing, and scalar values exactly. The request's company is the CO.CODE value to place in the ESON record; live reads use the company configured on this MCP connection.",
-    "Use the supplied ESON skill guidance and the established reference structure. Do not write to the filesystem or call any mutation tool.",
+    "For each application, call app-schema and ofs-read. An ofs-read field is a {name, mv, sv, value} occurrence, not a standalone ESON property. Use app-schema multi flags, the occurrence positions, and the matching same-application ESON example together to reconstruct each complete repeating group and nested field. Preserve every live field occurrence and exact value; do not flatten, summarize, omit, or invent values. Use examples only for ESON structure, never as a source of record values. The request's company is the CO.CODE value to place in the ESON record; live reads use the company configured on this MCP connection.",
+    "Complete the requested ESON conversion rather than returning a status, explanation, or refusal as file content. Before responding, check that the ESON includes the requested application root, all fields from the live record, and properly nested repeating values. If an ESON cannot be produced, return a clear error instead of placing prose in the content field.",
     "Return ONLY one valid JSON object, with no prose or Markdown fences, in this shape: {\"files\":[{\"company\":\"...\",\"application\":\"...\",\"id\":\"...\",\"content\":\"complete ESON source\"}]}. Return exactly one entry per requested record. The content must be a complete ESON file, not a summary.",
+    "Do not write to the filesystem or call any mutation tool.",
     `Requested records:\n${JSON.stringify(records, null, 2)}`,
     skill ? `ESON generation guidance:\n${skill}` : "",
+    referenceExamples.length
+      ? `Same-application ESON references (structure only):\n${referenceExamples.map((example) =>
+        `Application: ${example.application}\nFile: ${example.filename}\n${example.content}`).join("\n\n")}`
+      : "",
   ].filter(Boolean).join("\n\n");
+}
+
+function validateEsonContent(content, application) {
+  const escapedApplication = application.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!new RegExp(`(?:^|\\n)\\s*${escapedApplication}\\s*\\{`, "i").test(content)) return false;
+  const stack = [];
+  let quoted = false;
+  let escaped = false;
+  for (const character of content) {
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === "\"") quoted = false;
+      continue;
+    }
+    if (character === "\"") {
+      quoted = true;
+    } else if (character === "{" || character === "[") {
+      stack.push(character);
+    } else if (character === "}" || character === "]") {
+      const expected = character === "}" ? "{" : "[";
+      if (stack.pop() !== expected) return false;
+    }
+  }
+  return !quoted && stack.length === 0 && content.trimEnd().endsWith("}");
 }
 
 export function parseEsonAssistantAnswer(answer, requestedRecords) {
@@ -233,8 +293,9 @@ export function parseEsonAssistantAnswer(answer, requestedRecords) {
         || source?.id !== expected.id
         || typeof source?.content !== "string"
         || !source.content.trim()
+        || !validateEsonContent(source.content, expected.application)
         || Buffer.byteLength(source.content, "utf8") > MAX_ESON_FILE_BYTES) {
-      throw Object.assign(new Error(`Assistant returned invalid ESON data for ${expected.application} > ${expected.id}.`), { status: 502 });
+      throw Object.assign(new Error(`Assistant returned invalid or incomplete ESON for ${expected.application} > ${expected.id}.`), { status: 502 });
     }
     files.push({
       filename: `${expected.company}.${expected.application}!${expected.id}.data.eson`,

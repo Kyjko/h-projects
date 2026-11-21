@@ -142,7 +142,7 @@ function validateEditMetadata(body) {
   if (instructions.length > 6000) {
     throw Object.assign(new Error("Editing instructions must be 6,000 characters or fewer."), { status: 400 });
   }
-  return { filename, ids, records, screenshot: body.screenshot === true, instructions };
+  return { filename, ids, records, screenshot: body.screenshot === true || body.screenshots === true, instructions };
 }
 
 async function writeUpload(request, targetPath) {

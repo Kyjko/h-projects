@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  callAAActivity,
   callTransactAuthorise,
   callTransactInput,
   callTransactTool,
+  validateAAActivityArgs,
   validateAuthoriseRecordArgs,
   validateDirectToolCall,
 } from "../src/transact-mcp.js";
@@ -96,49 +98,6 @@ test("record input validates its dedicated argument shape and sends validate-onl
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     },
   });
-
-  test("record authorisation is explicit and invokes ofs-authorise", async () => {
-    assert.deepEqual(validateAuthoriseRecordArgs({
-      application: "OFS.SOURCE",
-      id: "SOURCE1",
-      confirm: true,
-    }), {
-      application: "OFS.SOURCE",
-      id: "SOURCE1",
-      confirm: true,
-    });
-    assert.throws(() => validateAuthoriseRecordArgs({
-      application: "OFS.SOURCE",
-      id: "SOURCE1",
-      confirm: false,
-    }), /explicit confirmation/);
-    assert.throws(() => validateDirectToolCall("ofs-authorise", {
-      application: "OFS.SOURCE",
-      id: "SOURCE1",
-      confirm: true,
-    }), /read-only/);
-
-    let request;
-    const result = await callTransactAuthorise({
-      url: "http://localhost:9189/mcp",
-      args: { application: "OFS.SOURCE", id: "SOURCE1", confirm: true },
-      fetchImpl: async (_url, options) => {
-        request = JSON.parse(options.body);
-        return new Response(JSON.stringify({
-          jsonrpc: "2.0",
-          id: request.id,
-          result: { content: [{ type: "text", text: JSON.stringify({ state: "live" }) }] },
-        }), { status: 200, headers: { "Content-Type": "application/json" } });
-      },
-    });
-    assert.equal(request.params.name, "ofs-authorise");
-    assert.deepEqual(request.params.arguments, {
-      application: "OFS.SOURCE",
-      id: "SOURCE1",
-      confirm: true,
-    });
-    assert.deepEqual(result, { state: "live" });
-  });
   assert.equal(request.params.name, "ofs-input");
   assert.equal(request.params.arguments.validate_only, true);
   assert.deepEqual(result, { statusCode: 1, errors: [] });
@@ -147,4 +106,87 @@ test("record input validates its dedicated argument shape and sends validate-onl
     args: { application: "CUSTOMER", id: "x", fields: [{ name: "BAD FIELD", value: "v" }], confirm: true, validate_only: true },
     fetchImpl: async () => assert.fail("Invalid field must not be sent"),
   }), /invalid application, ID, field name, value, or position/);
+});
+
+test("record input submits with validate_only explicitly false", async () => {
+  let request;
+  const result = await callTransactInput({
+    url: "http://localhost:9189/mcp",
+    args: {
+      application: "CUSTOMER",
+      id: "CUSTOMER-1",
+      fields: [{ name: "MNEMONIC", value: "TEST" }],
+      confirm: true,
+      validate_only: false,
+    },
+    fetchImpl: async (_url, options) => {
+      request = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: { content: [{ type: "text", text: JSON.stringify({ state: "live", errors: [] }) }] },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  });
+  assert.equal(request.params.name, "ofs-input");
+  assert.equal(request.params.arguments.validate_only, false);
+  assert.deepEqual(result, { state: "live", errors: [] });
+});
+
+test("AA activities require an explicit simulation choice and send the functional payload", async () => {
+  const args = {
+    activity: "LENDING-CHANGE-PRINCIPALINT",
+    arrangement: "AA26001ABCDEF",
+    effective_date: "20261111",
+    conditions: { PRINCIPALINT: { RATE: "5.25" } },
+    simulate: true,
+    confirm: true,
+  };
+  assert.deepEqual(validateAAActivityArgs(args), args);
+  assert.throws(() => validateAAActivityArgs({ ...args, simulate: undefined }), /simulation choice/);
+  assert.throws(() => validateAAActivityArgs({ ...args, confirm: false }), /explicit confirmation/);
+  assert.throws(() => validateAAActivityArgs({ ...args, effective_date: "2026-11-11" }), /YYYYMMDD/);
+  assert.throws(() => validateAAActivityArgs({ ...args, effective_date: "20260230" }), /YYYYMMDD/);
+  assert.throws(() => validateAAActivityArgs({ ...args, unexpected: true }), /simulation choice/);
+
+  let request;
+  const result = await callAAActivity({
+    url: "http://localhost:9189/mcp",
+    args,
+    fetchImpl: async (_url, options) => {
+      request = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: { content: [{ type: "text", text: JSON.stringify({ simulationMode: true, applied: false }) }] },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  });
+  assert.equal(request.params.name, "aa-arr-activity");
+  assert.deepEqual(request.params.arguments, args);
+  assert.deepEqual(result, { simulationMode: true, applied: false });
+});
+
+test("record authorisation is explicit and invokes ofs-authorise", async () => {
+  const args = { application: "OFS.SOURCE", id: "SOURCE1", version: "AUTO.APPROVE", confirm: true };
+  assert.deepEqual(validateAuthoriseRecordArgs(args), args);
+  assert.throws(() => validateAuthoriseRecordArgs({ ...args, confirm: false }), /explicit confirmation/);
+  assert.throws(() => validateDirectToolCall("ofs-authorise", args), /read-only/);
+
+  let request;
+  const result = await callTransactAuthorise({
+    url: "http://localhost:9189/mcp",
+    args,
+    fetchImpl: async (_url, options) => {
+      request = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: request.id,
+        result: { content: [{ type: "text", text: JSON.stringify({ state: "live" }) }] },
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  });
+  assert.equal(request.params.name, "ofs-authorise");
+  assert.deepEqual(request.params.arguments, args);
+  assert.deepEqual(result, { state: "live" });
 });

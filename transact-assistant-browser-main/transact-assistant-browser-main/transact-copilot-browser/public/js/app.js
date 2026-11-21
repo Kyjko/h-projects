@@ -3,11 +3,18 @@ import { renderData, renderError, renderResult } from "./record-view.js";
 import { collectDesignerFields, renderDesignerFields } from "./record-designer.js";
 import { initializeDesignDocument, isDesignDocumentMode, setDesignDocumentMode } from "./design-document.js";
 import { initializeMenus } from "./menus.js";
+import { initializeL3Developer, renderMarkdown } from "./l3-developer.js";
+import { initializeDiagnostics } from "./diagnostics.js";
+import { initializeArrangementManager } from "./arrangement-manager.js";
+import { initializeOFS } from "./ofs.js";
 import {
   initializeAuthorisation,
+  openAuthorisationRecord,
   setAuthorisationMode,
 } from "./authorise-record.js";
 import { filterTableRows, recordWildcardEnquiry } from "./search.js";
+import { parseApplicationInput } from "./application-input.js";
+import { applicationErrorIds, buildApplicationErrorEnquiries } from "./application-errors.js";
 
 const $ = (selector) => document.querySelector(selector);
 const chatForm = $("#chat-form");
@@ -20,10 +27,14 @@ const recordView = $("#record-view");
 const browserView = $("#record-browser-view");
 const designerView = $("#new-record-view");
 const explorerView = $("#explorer-view");
+const diagnosticView = $("#diagnostic-view");
+const arrangementManagerView = $("#arrangement-manager-view");
+const ofsView = $("#ofs-view");
 const designerApplication = $("#designer-application");
 const designerRecordId = $("#designer-record-id");
 const designerFields = $("#designer-fields");
 const history = [];
+const openL3Developer = initializeL3Developer();
 let currentRecord = null;
 let designerSchema = null;
 let designerLoadedApplication = "";
@@ -31,6 +42,7 @@ let designerLoadingApplication = "";
 let designerSchemaLoadSequence = 0;
 let designerMode = false;
 let toastTimer;
+let menuActions;
 
 function showToast(message) {
   const toast = $("#toast");
@@ -40,19 +52,51 @@ function showToast(message) {
   toastTimer = setTimeout(() => toast.classList.remove("visible"), 2200);
 }
 
+function hideDiagnostics() {
+  diagnosticView.hidden = true;
+  $("#open-diagnostics").setAttribute("aria-pressed", "false");
+}
+
+function openDiagnostics() {
+  setDesignerMode(false);
+  setDesignDocumentMode(false);
+  setAuthorisationMode(false);
+  hideDiagnostics();
+  browserView.hidden = true;
+  explorerView.hidden = true;
+  $("#l3-developer-view").hidden = true;
+  arrangementManagerView.hidden = true;
+  ofsView.hidden = true;
+  diagnosticView.hidden = false;
+  document.querySelectorAll(".nav-item.active, .nav-subitem.active").forEach((item) => item.classList.remove("active"));
+  $("#open-diagnostics").setAttribute("aria-pressed", "true");
+}
+
+function closeDiagnostics() {
+  hideDiagnostics();
+  browserView.hidden = false;
+  document.querySelector('[data-action="context"].nav-item').classList.add("active");
+}
+
 function updateContext() {
-  const application = applicationInput.value.trim().toUpperCase();
+  const parsed = parseApplicationInput(applicationInput.value);
+  const application = parsed?.application || applicationInput.value.trim().toUpperCase();
   $("#crumb-app").textContent = application || "APPLICATION";
   updateListButtonLabel();
+  const commandMode = Boolean(parsed?.command);
+  $("#execute-application-command").hidden = !commandMode;
+  $("#open-version-record").hidden = !(parsed?.version && !parsed.command);
+  $("#list-records").hidden = commandMode;
+  $("#open-record").disabled = commandMode;
   if (!designerMode && !isDesignDocumentMode()) {
     $("#assistant-context-label").textContent = application
-      ? `${application}${recordInput.value.trim() ? ` · ${recordInput.value.trim()}` : ""}`
+      ? `${application}${parsed?.version ? `,${parsed.version}` : ""}${(parsed?.recordId || recordInput.value.trim()) ? ` · ${parsed?.recordId || recordInput.value.trim()}` : ""}`
       : "No application selected";
   }
 }
 
 function updateListButtonLabel() {
-  const application = applicationInput.value.trim();
+  const application = parseApplicationInput(applicationInput.value)?.application || applicationInput.value.trim();
   const recordId = recordInput.value.trim();
   const button = $("#list-records");
   button.textContent = application.includes("...")
@@ -66,10 +110,27 @@ function addMessage(role, text, isError = false) {
   const label = document.createElement("span");
   label.className = "message-label";
   label.textContent = role === "user" ? "You" : isError ? "Connection" : "Transact Assistant";
-  const content = document.createElement("span");
-  content.textContent = text;
+  const content = document.createElement("div");
+  content.className = "chat-message-content";
+  if (role === "assistant" && !isError) renderMarkdown(content, text);
+  else content.textContent = text;
   message.append(label, content);
   chatFeed.append(message);
+  if (role === "assistant" && !isError && content.scrollHeight > 280) {
+    content.classList.add("collapsed");
+    const showMore = document.createElement("button");
+    showMore.type = "button";
+    showMore.className = "chat-show-more";
+    showMore.textContent = "Show more";
+    showMore.setAttribute("aria-expanded", "false");
+    showMore.addEventListener("click", () => {
+      const expanded = showMore.getAttribute("aria-expanded") === "true";
+      showMore.setAttribute("aria-expanded", String(!expanded));
+      showMore.textContent = expanded ? "Show more" : "Show less";
+      content.classList.toggle("collapsed", expanded);
+    });
+    message.append(showMore);
+  }
   chatFeed.scrollTop = chatFeed.scrollHeight;
 }
 
@@ -109,12 +170,26 @@ function displayAnswer(answer, { largeResult, largeResultError } = {}) {
   const result = largeResult !== undefined
     ? renderData(largeResult, recordView)
     : renderResult(answer, recordView);
+  const narrative = largeResult !== undefined ? answer.trim() : result.narrative;
+  if (narrative) {
+    const markdown = document.createElement("div");
+    markdown.className = "assistant-main-response";
+    renderMarkdown(markdown, narrative);
+    recordView.prepend(markdown);
+  } else if (largeResult === undefined && result.raw === null) {
+    const markdown = document.createElement("div");
+    markdown.className = "assistant-main-response";
+    renderMarkdown(markdown, answer);
+    recordView.replaceChildren(markdown);
+  }
   if (largeResultError) {
     result.subtitle = "The assistant returned a result-file reference, but the complete result could not be loaded.";
     renderError(largeResultError, recordView);
   }
   $("#record-title").textContent = result.title;
-  $("#record-subtitle").textContent = result.subtitle;
+  $("#record-subtitle").textContent = result.narrative
+    ? "Assistant explanation and structured Transact result."
+    : result.subtitle;
   $("#record-state").textContent = "RESULT";
   $("#record-state").removeAttribute("data-state");
   currentRecord = result.raw;
@@ -208,7 +283,7 @@ async function submitRequest(message, { fromChat = true, writeConfirmed = false 
   try {
     const response = await askCopilot({
       message,
-      application: suggestionMode ? designerApplication.value.trim() : applicationInput.value.trim(),
+      application: suggestionMode ? designerApplication.value.trim() : (parseApplicationInput(applicationInput.value)?.application || applicationInput.value.trim()),
       recordId: suggestionMode ? designerRecordId.value.trim() : recordInput.value.trim(),
       history: fromChat ? history.slice(0, -1) : history.slice(-6),
       writeConfirmed,
@@ -248,9 +323,13 @@ async function submitRequest(message, { fromChat = true, writeConfirmed = false 
 
 function setDesignerMode(enabled) {
   if (enabled) {
+    hideDiagnostics();
+    arrangementManagerView.hidden = true;
+    ofsView.hidden = true;
     setDesignDocumentMode(false);
     setAuthorisationMode(false);
     explorerView.hidden = true;
+    $("#l3-developer-view").hidden = true;
   }
   designerMode = enabled;
   browserView.hidden = enabled;
@@ -292,14 +371,18 @@ function responseErrors(response) {
 function designerPayload({ requireId = true } = {}) {
   const application = designerApplication.value.trim().toUpperCase();
   const id = designerRecordId.value.trim();
+  const version = $("#designer-version").value.trim().toUpperCase();
   if (!application || !/^[A-Z0-9][A-Z0-9.]*$/.test(application)) {
     throw new Error("Enter a valid Transact application name.");
   }
   if (requireId && !id) throw new Error("Enter the ID for the new record.");
+  if (version && !/^[A-Z0-9][A-Z0-9._-]{0,127}$/.test(version)) {
+    throw new Error("Enter a valid VERSION name.");
+  }
   if (application !== designerLoadedApplication) {
     throw new Error("Load the field catalog for the selected application before continuing.");
   }
-  return { application, id, fields: collectDesignerFields(designerFields) };
+  return { application, id, ...(version ? { version } : {}), fields: collectDesignerFields(designerFields) };
 }
 
 async function loadDesignerSchema() {
@@ -481,10 +564,13 @@ document.querySelectorAll("[data-action]").forEach((button) => {
     const application = applicationInput.value.trim().toUpperCase();
     const recordId = recordInput.value.trim();
     if (navItem && action === "context") {
+      hideDiagnostics();
+      arrangementManagerView.hidden = true;
       setDesignerMode(false);
       setDesignDocumentMode(false);
       setAuthorisationMode(false);
       explorerView.hidden = true;
+      $("#l3-developer-view").hidden = true;
       browserView.hidden = false;
     }
     if (["application", "record", "list"].includes(action) && !application) {
@@ -523,17 +609,119 @@ document.querySelectorAll("[data-action]").forEach((button) => {
   });
 });
 
+async function executeApplicationCommand() {
+  const command = parseApplicationInput(applicationInput.value);
+  if (!command?.command) {
+    showToast("Enter an application followed by a Transact function, such as CUSTOMER S 100123.");
+    return;
+  }
+  const application = command.application;
+  const id = command.recordId || recordInput.value.trim();
+  if ((command.needsRecordId || ["S", "I", "A"].includes(command.command)) && !id) {
+    showToast(`${command.command} requires a record ID.`);
+    recordInput.focus();
+    return;
+  }
+
+  if (command.command === "S") {
+    submitDirectTool("ofs-read", { application, id }, `${application} · ${id}`);
+  } else if (command.command === "I") {
+    designerApplication.value = application;
+    designerRecordId.value = id;
+    $("#designer-version").value = command.version;
+    setDesignerMode(true);
+    await loadDesignerSchema();
+  } else if (command.command === "A") {
+    openAuthorisationRecord(application, id, command.version);
+  } else if (command.command === "L") {
+    submitDirectTool("ofs-enquiry", { enquiry: `%${application}`, max_rows: 5000 }, `%${application}`);
+  } else if (command.command === "E") {
+    submitApplicationErrors(application);
+  }
+}
+
+async function submitApplicationErrors(application) {
+  if ($("#send-button").disabled) return;
+  setBusy(true, { service: "Transact", detail: `Searching EB.ERROR for ${application}…` });
+  const startedAt = Date.now();
+  const elapsedTimer = setInterval(() => {
+    $("#request-elapsed").textContent = `${Math.floor((Date.now() - startedAt) / 1000)}s`;
+  }, 1000);
+  try {
+    const enquiries = buildApplicationErrorEnquiries(application);
+    const results = await Promise.all(enquiries.map((args) => callTransactTool("ofs-enquiry", args)));
+    const identifiers = applicationErrorIds(results);
+    $("#request-status-detail").textContent = `Reading ${identifiers.length} matching EB.ERROR record(s)…`;
+    const records = [];
+    for (let offset = 0; offset < identifiers.length; offset += 10) {
+      const batch = identifiers.slice(offset, offset + 10);
+      records.push(...await Promise.all(batch.map(async (id) => {
+        try {
+          const record = await callTransactTool("ofs-read", { application: "EB.ERROR", id });
+          const fields = record?.record?.fields || record?.fields || [];
+          const values = new Map(fields.map((field) => [field.name, String(field.value ?? "")]));
+          return [
+            id,
+            values.get("EB.ERROR.ID") || id,
+            values.get("ERROR.INFO") || "",
+            values.get("ERROR.MSG") || "",
+            values.get("ERROR.SOL") || "",
+            "",
+          ];
+        } catch (error) {
+          return [id, id, "", "", "", error.message];
+        }
+      })));
+    }
+    displayDirectResult({
+      enquiry: `EB.ERROR matches for ${application}`,
+      columns: ["@ID", "EB.ERROR.ID", "ERROR.INFO", "ERROR.MSG", "ERROR.SOL", "READ.ERROR"]
+        .map((identifier) => ({ identifier })),
+      rows: records.map((cells) => ({ cells })),
+      truncated: results.some((result) => result.truncated),
+    }, `Errors related to ${application}`);
+    $("#record-subtitle").textContent = records.length
+      ? `${records.length.toLocaleString()} matching EB.ERROR record(s) found by searching error identifiers and text.`
+      : `No EB.ERROR identifier or text matched ${application}.`;
+  } catch (error) {
+    recordView.replaceChildren();
+    recordView.classList.remove("empty-record");
+    renderError(error.message, recordView);
+    $("#record-title").textContent = "Application error search could not be completed";
+    $("#record-subtitle").textContent = "Check access to EB.ERROR and the local Transact MCP connection.";
+    $("#record-state").textContent = "ERROR";
+    $("#record-state").dataset.state = "error";
+  } finally {
+    clearInterval(elapsedTimer);
+    setBusy(false);
+  }
+}
+
 applicationInput.addEventListener("input", updateContext);
 recordInput.addEventListener("input", updateContext);
+applicationInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const parsed = parseApplicationInput(applicationInput.value);
+  if (parsed?.command) {
+    event.preventDefault();
+    executeApplicationCommand();
+  } else if (parsed?.version) {
+    event.preventDefault();
+    menuActions?.openVersions(parsed.application, parsed.version);
+  }
+});
 recordInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
-    $("#open-record").click();
+    const parsed = parseApplicationInput(applicationInput.value);
+    if (parsed?.command) executeApplicationCommand();
+    else if (parsed?.version) menuActions?.openVersions(parsed.application, parsed.version);
+    else $("#open-record").click();
   }
 });
 
 $("#open-record").addEventListener("click", () => {
-  const application = applicationInput.value.trim();
+  const application = parseApplicationInput(applicationInput.value)?.application || applicationInput.value.trim();
   const recordId = recordInput.value.trim();
   if (application.includes("...") || recordId.includes("...")) {
     showToast("Use Find applications or Filter records for wildcard searches.");
@@ -546,8 +734,19 @@ $("#open-record").addEventListener("click", () => {
   submitDirectTool("ofs-read", { application: application.toUpperCase(), id: recordId }, `${application.toUpperCase()} · ${recordId}`);
 });
 
+$("#open-version-record").addEventListener("click", () => {
+  const parsed = parseApplicationInput(applicationInput.value);
+  if (!parsed?.application || !parsed.version || parsed.command) {
+    showToast("Enter an application and VERSION, such as TSA.SERVICE,MY.VERSION.");
+    return;
+  }
+  menuActions?.openVersions(parsed.application, parsed.version);
+});
+
+$("#execute-application-command").addEventListener("click", executeApplicationCommand);
+
 $("#list-records").addEventListener("click", () => {
-  const application = applicationInput.value.trim();
+  const application = parseApplicationInput(applicationInput.value)?.application || applicationInput.value.trim();
   const recordId = recordInput.value.trim();
   if (!application) {
     showToast("Enter an application to list its records.");
@@ -595,17 +794,25 @@ $("#close-chat").addEventListener("click", () => setChatVisible(false));
 
 initializeDesignDocument({
   onEnter: () => {
+    hideDiagnostics();
+    arrangementManagerView.hidden = true;
+    ofsView.hidden = true;
     setDesignerMode(false);
     setAuthorisationMode(false);
     explorerView.hidden = true;
+    $("#l3-developer-view").hidden = true;
   },
 });
 
 initializeAuthorisation({
   onEnter: () => {
+    hideDiagnostics();
+    arrangementManagerView.hidden = true;
+    ofsView.hidden = true;
     setDesignerMode(false);
     setDesignDocumentMode(false);
     explorerView.hidden = true;
+    $("#l3-developer-view").hidden = true;
     browserView.hidden = true;
   },
   onExit: () => {
@@ -613,13 +820,33 @@ initializeAuthorisation({
   },
 });
 
-initializeMenus({
+menuActions = initializeMenus({
   onOpen: () => {
+    hideDiagnostics();
+    arrangementManagerView.hidden = true;
+    ofsView.hidden = true;
     setDesignerMode(false);
     setDesignDocumentMode(false);
     setAuthorisationMode(false);
     browserView.hidden = true;
+    explorerView.hidden = true;
+    $("#l3-developer-view").hidden = true;
   },
+  onL3Developer: openL3Developer,
+  onManageArrangements: initializeArrangementManager({
+    onOpen: () => { arrangementManagerView.hidden = false; },
+  }),
+  onOFS: () => {
+    ofsView.hidden = false;
+    ofsTools.open();
+  },
+});
+
+const ofsTools = initializeOFS();
+
+initializeDiagnostics({
+  onOpen: openDiagnostics,
+  onClose: closeDiagnostics,
 });
 
 $("#toggle-designer").addEventListener("click", () => setDesignerMode(!designerMode));

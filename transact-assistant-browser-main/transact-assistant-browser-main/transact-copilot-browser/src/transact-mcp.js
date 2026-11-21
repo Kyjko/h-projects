@@ -193,9 +193,41 @@ export function validateAuthoriseRecordArgs(args) {
       || typeof args.id !== "string"
       || !args.id.trim()
       || args.id.length > 256
+      || (args.version !== undefined && (typeof args.version !== "string" || !/^[A-Z0-9][A-Z0-9._-]{0,127}$/i.test(args.version)))
       || args.confirm !== true
-      || Object.keys(args).some((key) => !["application", "id", "confirm"].includes(key))) {
+      || Object.keys(args).some((key) => !["application", "id", "version", "confirm"].includes(key))) {
     throw Object.assign(new Error("Authorisation requires a valid application, record ID, and explicit confirmation."), { status: 400 });
+  }
+  return args;
+}
+
+function isValidEffectiveDate(value) {
+  if (typeof value !== "string" || !/^\d{8}$/.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(4, 6));
+  const day = Number(value.slice(6, 8));
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
+export function validateAAActivityArgs(args) {
+  if (!args || typeof args !== "object" || Array.isArray(args)
+      || typeof args.activity !== "string" || !/^[A-Z0-9][A-Z0-9.-]{0,79}$/i.test(args.activity)
+      || typeof args.arrangement !== "string" || !/^[A-Z0-9][A-Z0-9.-]{0,59}$/i.test(args.arrangement)
+      || !isValidEffectiveDate(args.effective_date)
+      || args.confirm !== true
+      || typeof args.simulate !== "boolean"
+      || (args.conditions !== undefined && (!args.conditions || typeof args.conditions !== "object" || Array.isArray(args.conditions)))
+      || Object.keys(args).some((key) => !["activity", "arrangement", "effective_date", "conditions", "confirm", "simulate"].includes(key))) {
+    throw Object.assign(new Error("AA activity requires a valid activity, arrangement, YYYYMMDD effective date, conditions object, explicit confirmation, and simulation choice."), { status: 400 });
+  }
+  if (Buffer.byteLength(JSON.stringify(args.conditions || {})) > 64 * 1024) {
+    throw Object.assign(new Error("AA activity conditions exceed the 64 KB request limit."), { status: 413 });
   }
   return args;
 }
@@ -203,4 +235,9 @@ export function validateAuthoriseRecordArgs(args) {
 export async function callTransactAuthorise({ url, args, fetchImpl = fetch }) {
   validateAuthoriseRecordArgs(args);
   return requestTool({ url, tool: "ofs-authorise", args, fetchImpl });
+}
+
+export async function callAAActivity({ url, args, fetchImpl = fetch }) {
+  validateAAActivityArgs(args);
+  return requestTool({ url, tool: "aa-arr-activity", args, fetchImpl });
 }

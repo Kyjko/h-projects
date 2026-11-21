@@ -75,6 +75,21 @@ export function buildCustomerLoansEnquiry(filters, maxRows = MAX_ROWS) {
   return buildFilteredEnquiry("AA.API.CUSTLOANS.1.2.0", filters, maxRows);
 }
 
+export function buildVersionEnquiry(application, maxRows = MAX_ROWS) {
+  const name = String(application || "").trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9.]*$/.test(name)) {
+    throw new Error("Enter a valid Transact application name.");
+  }
+  if (!Number.isInteger(maxRows) || maxRows < 0 || maxRows > MAX_ROWS) {
+    throw new Error(`Maximum rows must be between 0 and ${MAX_ROWS}.`);
+  }
+  return {
+    enquiry: "%VERSION",
+    selection: [{ field: "@ID", operator: "LK", value: `${name},...` }],
+    max_rows: maxRows,
+  };
+}
+
 export function getEnquirySourceTable(record) {
   const fields = record?.record?.fields || record?.fields || [];
   for (const name of ["FILE.NAME", "FILE.NAME.1", "ENQUIRY.FILE", "SOURCE.FILE"]) {
@@ -107,7 +122,12 @@ const PAGES = {
   "find-arrangement": {
     group: "User menu",
     title: "Find Arrangement",
-    description: "Find an arrangement by ID, account reference, or customer number.",
+    description: "Open and manage AA.ARRANGEMENT records, or list arrangements for company AU0010001.",
+  },
+  "manage-arrangements": {
+    group: "User menu",
+    title: "Manage Arrangements",
+    description: "Review product-configured AA activities and create arrangement changes through AA.ARRANGEMENT.ACTIVITY.",
   },
   "locked-records": {
     group: "User menu",
@@ -134,6 +154,11 @@ const PAGES = {
     title: "Enquiries",
     description: "Browse saved Transact enquiries, see their source tables, and run an enquiry.",
   },
+  ofs: {
+    group: "Explore",
+    title: "OFS message inputter",
+    description: "Generate and validate supported OFS input messages, then queue or execute them through Transact MCP.",
+  },
   "configure-products": {
     group: "Admin menu",
     title: "Configure Products",
@@ -144,6 +169,11 @@ const PAGES = {
     title: "Manage TSA Service",
     description: "List records from the TSA.SERVICE application.",
   },
+  versions: {
+    group: "Admin menu",
+    title: "Manage versions",
+    description: "Find VERSION records for an application, inspect a version, and compare it with another version.",
+  },
   "generate-eson": {
     group: "AI tools",
     title: "Generate ESON",
@@ -153,6 +183,11 @@ const PAGES = {
     group: "AI tools",
     title: "Manage Skills",
     description: "Browse, upload, and edit local Copilot skills.",
+  },
+  "l3-developer": {
+    group: "Explore",
+    title: "L3 Developer Tools",
+    description: "Browse and search the VmaL3JavaP2 Java project, edit source, and ask the Assistant for code and Transact-record guidance.",
   },
 };
 
@@ -254,6 +289,43 @@ export function normalizeRecordIds(result) {
 
 function clearResults() {
   $("#explorer-results").replaceChildren();
+}
+
+function columnName(column) {
+  return String(column?.identifier || column?.name || column?.label || column || "").toUpperCase();
+}
+
+function rowFieldValue(row, columns, name) {
+  const index = columns.findIndex((column) => columnName(column) === name);
+  if (index < 0) return "";
+  const cells = Array.isArray(row?.cells) ? row.cells : Array.isArray(row) ? row : [];
+  return String(cells[index] ?? "");
+}
+
+export function versionRecordId(application, id) {
+  const normalizedApplication = String(application || "").trim().toUpperCase();
+  const normalizedId = normalizeRecordId(id).trim();
+  if (!normalizedId) return "";
+  return normalizedId.toUpperCase().startsWith(`${normalizedApplication},`)
+    ? normalizedId
+    : `${normalizedApplication},${normalizedId}`;
+}
+
+export function compareVersionRecords(left, right) {
+  const fields = (record) => record?.record?.fields || record?.fields || [];
+  const keyed = (record) => new Map(fields(record).map((field) => {
+    const position = field.mv !== undefined || field.sv !== undefined
+      ? `:${field.mv || 1}:${field.sv || 1}`
+      : "";
+    return [`${field.name}${position}`, String(field.value ?? "")];
+  }));
+  const leftFields = keyed(left);
+  const rightFields = keyed(right);
+  return [...new Set([...leftFields.keys(), ...rightFields.keys()])].sort().map((field) => {
+    const leftValue = leftFields.get(field) ?? "";
+    const rightValue = rightFields.get(field) ?? "";
+    return { field, left: leftValue, right: rightValue, changed: leftValue !== rightValue };
+  });
 }
 
 function showResult(data, title) {
@@ -998,7 +1070,7 @@ function setupEsonGenerator() {
     referenceButton.disabled = true;
     addButton.disabled = true;
     $("#explorer-status").classList.remove("error");
-    $("#explorer-status").textContent = "Assistant is reading Transact records and preparing ESON…";
+    $("#explorer-status").textContent = "Assistant is reading Transact records and preparing ESON. Large records can take a few minutes; incomplete results are retried once.";
     try {
       const result = await generateEson(collectRecords());
       renderFiles(result.files || []);
@@ -1247,7 +1319,195 @@ function setTitle(page) {
   clearResults();
 }
 
-export function initializeMenus({ onOpen } = {}) {
+function versionOptionName(application, id) {
+  const prefix = `${application},`;
+  return id.toUpperCase().startsWith(prefix.toUpperCase()) ? id.slice(prefix.length) : id;
+}
+
+function renderVersionComparison(leftRecord, leftId, rightRecord, rightId, container) {
+  const rows = compareVersionRecords(leftRecord, rightRecord);
+  container.replaceChildren();
+  const leftApplication = leftId.split(",", 1)[0];
+  const rightApplication = rightId.split(",", 1)[0];
+  container.append(node("h3", "", `Comparing ${versionOptionName(leftApplication, leftId)} with ${versionOptionName(rightApplication, rightId)}`));
+  if (!rows.length) {
+    container.append(node("p", "record-subtitle", "Neither VERSION record returned fields."));
+    return;
+  }
+  const table = node("table", "enquiry-table version-diff-table");
+  const head = node("thead");
+  const header = node("tr");
+  for (const label of ["Field", versionOptionName(leftApplication, leftId), versionOptionName(rightApplication, rightId), "Result"]) {
+    header.append(node("th", "", label));
+  }
+  head.append(header);
+  const body = node("tbody");
+  for (const row of rows) {
+    const tr = node("tr", row.changed ? "version-field-changed" : "");
+    tr.append(
+      node("th", "", row.field),
+      node("td", "", row.left),
+      node("td", "", row.right),
+      node("td", "", row.changed ? "Different" : "Same"),
+    );
+    body.append(tr);
+  }
+  table.append(head, body);
+  const wrap = node("div", "enquiry-wrap");
+  wrap.append(table);
+  container.append(wrap);
+}
+
+async function setupVersionManager(initialApplication = "", initialVersion = "") {
+  const form = node("form", "explorer-form version-search-form");
+  const application = inputField("APPLICATION", "e.g. TSA.SERVICE");
+  application.input.required = true;
+  const submit = actionButton("View versions");
+  form.append(application.label, submit);
+  let versionRows = [];
+  let pendingVersion = initialVersion;
+
+  async function viewVersion(id, detailHost) {
+    detailHost.replaceChildren(node("p", "version-loading", `Reading VERSION · ${id}…`));
+    try {
+      const record = await callTransactTool("ofs-read", { application: "VERSION", id });
+      record.application = "VERSION";
+      record.id ||= id;
+      const detail = node("section", "version-detail-block");
+      const heading = node("div", "version-detail-heading");
+      heading.append(node("h2", "", `VERSION · ${id}`));
+      const recordView = node("div", "scroll_contract_screen version-record");
+      renderData(record, recordView);
+
+      const compareControls = node("div", "version-compare-controls");
+      const peerLabel = node("label", "explorer-field");
+      peerLabel.append(node("span", "", "COMPARE WITH"));
+      const peer = node("select");
+      peer.append(node("option", "", "Choose another version…"));
+      for (const other of versionRows) {
+        if (other.id === id) continue;
+        const option = node("option", "", other.name);
+        option.value = other.id;
+        peer.append(option);
+      }
+      const compareButton = node("button", "button button-secondary", "Compare");
+      compareButton.type = "button";
+      compareButton.disabled = peer.options.length <= 1;
+      peer.addEventListener("change", () => {
+        compareButton.disabled = !peer.value;
+      });
+      const comparison = node("section", "version-comparison");
+      comparison.hidden = true;
+      compareButton.addEventListener("click", async () => {
+        if (!peer.value) return;
+        compareButton.disabled = true;
+        comparison.hidden = false;
+        comparison.replaceChildren(node("p", "version-loading", `Reading VERSION · ${peer.value}…`));
+        try {
+          const otherRecord = await callTransactTool("ofs-read", { application: "VERSION", id: peer.value });
+          otherRecord.application = "VERSION";
+          otherRecord.id ||= peer.value;
+          renderVersionComparison(record, id, otherRecord, peer.value, comparison);
+        } catch (error) {
+          comparison.replaceChildren();
+          renderError(error.message, comparison);
+        } finally {
+          compareButton.disabled = false;
+        }
+      });
+      peerLabel.append(peer);
+      compareControls.append(peerLabel, compareButton);
+      detail.append(heading, compareControls, comparison, recordView);
+      detailHost.replaceChildren(detail);
+    } catch (error) {
+      detailHost.replaceChildren();
+      renderError(error.message, detailHost);
+    }
+  }
+
+  async function loadVersions() {
+    const app = application.input.value.trim().toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9.]*$/.test(app)) {
+      $("#explorer-status").textContent = "Enter a valid Transact application name.";
+      $("#explorer-status").classList.add("error");
+      application.input.focus();
+      return;
+    }
+    submit.disabled = true;
+    $("#explorer-status").classList.remove("error");
+    $("#explorer-status").textContent = `Finding VERSION records for ${app}…`;
+    clearResults();
+    try {
+      const result = await callTransactTool("ofs-enquiry", buildVersionEnquiry(app));
+      versionRows = (result.rows || []).map((row) => {
+        const rawId = rowId(row, result.columns || []);
+        if (!rawId) return null;
+        const id = versionRecordId(app, rawId);
+        return {
+          id,
+          name: versionOptionName(app, id),
+          description: rowFieldValue(row, result.columns || [], "DESCRIPTION"),
+        };
+      }).filter((row, index, list) => row?.id && list.findIndex((item) => item?.id === row.id) === index);
+      const list = node("section", "version-list");
+      list.append(node("h2", "", `${versionRows.length.toLocaleString()} version(s) for ${app}`));
+      if (!versionRows.length) {
+        list.append(node("p", "record-subtitle", "No VERSION records were returned for this application."));
+      }
+      for (const row of versionRows) {
+        const entry = node("article", "version-list-item");
+        const details = node("div", "version-list-info");
+        details.append(node("strong", "", row.name), node("code", "", row.id));
+        if (row.description) details.append(node("p", "", row.description));
+        const view = node("button", "button button-secondary", "View version");
+        view.type = "button";
+        view.addEventListener("click", () => viewVersion(row.id, detailHost));
+        entry.append(details, view);
+        list.append(entry);
+      }
+      const detailHost = node("div", "version-detail-host");
+      $("#explorer-results").replaceChildren(list, detailHost);
+      $("#explorer-status").textContent = result.truncated
+        ? `Showing ${versionRows.length.toLocaleString()} version(s); the enquiry result was truncated.`
+        : `${versionRows.length.toLocaleString()} version(s) returned for ${app}.`;
+      if (pendingVersion) {
+        const target = versionRows.find((row) => row.name.toUpperCase() === pendingVersion.toUpperCase()
+          || row.id.toUpperCase() === pendingVersion.toUpperCase()
+          || row.id.toUpperCase() === `${app},${pendingVersion.toUpperCase()}`);
+        if (target) await viewVersion(target.id, detailHost);
+        else $("#explorer-status").textContent += ` VERSION ${pendingVersion} was not in the returned list.`;
+        pendingVersion = "";
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadVersions();
+  });
+  $("#explorer-controls").replaceChildren(form);
+  if (initialApplication) {
+    application.input.value = initialApplication;
+    await loadVersions();
+  }
+}
+
+export function initializeMenus({ onOpen, onL3Developer, onManageArrangements, onOFS } = {}) {
+  async function openVersions(application = "", version = "") {
+    const page = PAGES.versions;
+    onOpen?.();
+    document.querySelectorAll(".nav-item.active").forEach((item) => item.classList.remove("active"));
+    document.querySelectorAll(".nav-subitem").forEach((item) => item.classList.remove("active"));
+    document.querySelector('[data-menu-page="versions"]')?.classList.add("active");
+    setTitle(page);
+    $("#explorer-view").hidden = false;
+    await setupVersionManager(application, version);
+  }
+
   document.querySelectorAll("[data-menu-page]").forEach((button) => {
     button.addEventListener("click", async () => {
       const page = PAGES[button.dataset.menuPage];
@@ -1256,11 +1516,26 @@ export function initializeMenus({ onOpen } = {}) {
       document.querySelectorAll(".nav-item.active").forEach((item) => item.classList.remove("active"));
       document.querySelectorAll(".nav-subitem").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
+      if (button.dataset.menuPage === "l3-developer") {
+        onL3Developer?.();
+        return;
+      }
+      if (button.dataset.menuPage === "ofs") {
+        onOFS?.();
+        return;
+      }
+      if (["manage-arrangements", "find-arrangement"].includes(button.dataset.menuPage)) {
+        onManageArrangements?.();
+        return;
+      }
+      if (button.dataset.menuPage === "versions") {
+        await openVersions();
+        return;
+      }
       setTitle(page);
       $("#explorer-view").hidden = false;
       if (button.dataset.menuPage === "find-customer") setupCustomer();
       else if (button.dataset.menuPage === "find-account") setupAccount();
-      else if (button.dataset.menuPage === "find-arrangement") setupArrangement();
       else if (button.dataset.menuPage === "payments-enquiry") setupPaymentsEnquiry();
       else if (button.dataset.menuPage === "customer-loans") setupCustomerLoansEnquiry();
       else if (button.dataset.menuPage === "enquiries") setupEnquiries();
@@ -1297,4 +1572,5 @@ export function initializeMenus({ onOpen } = {}) {
       }
     });
   });
+  return { openVersions };
 }

@@ -4,14 +4,18 @@ import {
   accountOwnerId,
   buildCustomerLoansEnquiry,
   buildPaymentsEnquiry,
+  buildVersionEnquiry,
+  compareVersionRecords,
   getEnquiryDescription,
   getEnquirySourceTable,
   normalizeRecordId,
   normalizeRecordIds,
   paymentRecordIds,
   paymentFlowAccountIds,
+  versionRecordId,
 } from "../public/js/menus.js";
 import { filterTableRows, recordWildcardEnquiry, rowId, wildcardRegex } from "../public/js/search.js";
+import { applicationErrorIds, buildApplicationErrorEnquiries } from "../public/js/application-errors.js";
 
 test("three-dot wildcard matches prefixes, suffixes, and substrings", () => {
   assert.equal(wildcardRegex("OFS...").test("OFS.SOURCE"), true);
@@ -48,6 +52,24 @@ test("record wildcard search delegates LK filtering to Transact", () => {
     selection: [{ field: "@ID", operator: "LK", value: "AA.ARRANGEMENT..." }],
     max_rows: 5000,
   });
+});
+
+test("application error search checks EB.ERROR identifiers and text fields", () => {
+  assert.deepEqual(buildApplicationErrorEnquiries("  tsa.service  "), [
+    "@ID", "EB.ERROR.ID", "ERROR.INFO", "ERROR.MSG", "ERROR.SOL",
+  ].map((field) => ({
+    enquiry: "%EB.ERROR",
+    selection: [{ field, operator: "LK", value: "...TSA.SERVICE..." }],
+    max_rows: 5000,
+  })));
+});
+
+test("application error search deduplicates matching IDs and handles empty results", () => {
+  assert.deepEqual(applicationErrorIds([
+    { columns: [{ identifier: "@ID" }], rows: [{ cells: ["ERR-1"] }, { cells: ["ERR-2"] }] },
+    { columns: [{ identifier: "@ID" }], rows: [{ cells: ["ERR-1"] }] },
+  ]), ["ERR-1", "ERR-2"]);
+  assert.deepEqual(applicationErrorIds([{ columns: [{ identifier: "@ID" }], rows: [] }]), []);
 });
 
 test("product group and product IDs remove only the trailing bank suffix before lookup", () => {
@@ -153,4 +175,40 @@ test("enquiry source-table indicator reads the ENQUIRY FILE.NAME field", () => {
   };
   assert.equal(getEnquirySourceTable(record), "AA.ARRANGEMENT");
   assert.equal(getEnquiryDescription(record), "Customer Loan Accounts");
+});
+
+test("version record IDs preserve full application keys and qualify bare names", () => {
+  assert.equal(versionRecordId("TSA.SERVICE", "TSA.SERVICE,MY.VERSION\\BNK"), "TSA.SERVICE,MY.VERSION");
+  assert.equal(versionRecordId("TSA.SERVICE", "MY.VERSION"), "TSA.SERVICE,MY.VERSION");
+  assert.equal(versionRecordId("TSA.SERVICE", ""), "");
+});
+
+test("VERSION enquiry filters by the application prefix in its VERSION record ID", () => {
+  assert.deepEqual(buildVersionEnquiry("TSA.SERVICE", 100), {
+    enquiry: "%VERSION",
+    selection: [{ field: "@ID", operator: "LK", value: "TSA.SERVICE,..." }],
+    max_rows: 100,
+  });
+  assert.throws(() => buildVersionEnquiry("TSA SERVICE"), /valid Transact application/);
+});
+
+test("version comparison matches field positions and reports value differences", () => {
+  assert.deepEqual(compareVersionRecords(
+    { fields: [
+      { name: "DESCRIPTION", value: "A" },
+      { name: "VALIDATION", mv: 1, value: "ONE" },
+      { name: "VALIDATION", mv: 2, value: "TWO" },
+    ] },
+    { fields: [
+      { name: "DESCRIPTION", value: "A" },
+      { name: "VALIDATION", mv: 1, value: "ONE" },
+      { name: "VALIDATION", mv: 2, value: "THREE" },
+      { name: "NEW.FIELD", value: "NEW" },
+    ] },
+  ), [
+    { field: "DESCRIPTION", left: "A", right: "A", changed: false },
+    { field: "NEW.FIELD", left: "", right: "NEW", changed: true },
+    { field: "VALIDATION:1:1", left: "ONE", right: "ONE", changed: false },
+    { field: "VALIDATION:2:1", left: "TWO", right: "THREE", changed: true },
+  ]);
 });

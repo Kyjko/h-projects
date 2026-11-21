@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createServer } from "../src/server.js";
 import { createAmendmentStore } from "../src/design-document/amendment-store.js";
+import { editDesignDocument } from "../public/js/design-document-api.js";
 
 async function withServer(options, run) {
   const server = createServer(options);
@@ -43,6 +44,36 @@ async function submitDocumentJob(origin, {
     body: bytes,
   });
 }
+
+test("design document API forwards the checked screenshot option to the server", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return {
+      ok: true,
+      async json() {
+        return requests.length === 1
+          ? { jobId: "job-1" }
+          : { filename: "design-amended.docx", downloadUrl: "/download", summary: "Done." };
+      },
+    };
+  };
+  try {
+    await editDesignDocument({
+      file: { name: "design.docx" },
+      amendmentIds: ["550e8400-e29b-41d4-a716-446655440000"],
+      records: [],
+      screenshots: true,
+      instructions: "",
+    });
+    const body = JSON.parse(requests[0].options.body);
+    assert.equal(body.screenshot, true);
+    assert.equal(Object.hasOwn(body, "screenshots"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("recent amendment store persists only the newest five records", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "transact-amendments-"));
@@ -124,6 +155,7 @@ test("document workflow lists amendments and edits a private copy for download",
     const response = await submitDocumentJob(origin, {
       filename: "Product-design.docx",
       amendmentIds: [id],
+      screenshot: true,
       instructions: "Add these fields to section 2.1, preserving the existing style.",
       onCreated: (jobId) => { jobIdForProgress = jobId; },
     });
@@ -134,7 +166,7 @@ test("document workflow lists amendments and edits a private copy for download",
     assert.match(copilotRequest.prompt, /Follow the edit-design-doc skill/);
     assert.match(copilotRequest.prompt, /"application": "CUSTOMER"/);
     assert.match(copilotRequest.prompt, /"recordId": "CUSTOMER-123"/);
-    assert.match(copilotRequest.prompt, /Screenshot insertion is disabled/);
+    assert.match(copilotRequest.prompt, /Screenshot insertion enabled: yes/);
     assert.match(copilotRequest.prompt, /Add these fields to section 2.1/);
     assert.match(copilotRequest.prompt, /copy the original uploaded document/);
     assert.equal(typeof copilotRequest.onProgress, "function");
@@ -143,7 +175,9 @@ test("document workflow lists amendments and edits a private copy for download",
     assert.match(progressDuringCopilot.summary, /updating section 2\.1/);
     assert.ok(copilotRequest.allowedTools.includes("word-mcp-server(copy_document)"));
     assert.ok(copilotRequest.allowedTools.includes("word-mcp-server(delete_paragraph)"));
-    assert.equal(copilotRequest.allowedTools.some((tool) => tool.startsWith("playwright(")), false);
+    assert.ok(copilotRequest.allowedTools.includes("playwright(browser_navigate)"));
+    assert.ok(copilotRequest.allowedTools.includes("playwright(browser_take_screenshot)"));
+    assert.ok(copilotRequest.allowedTools.includes("playwright(browser_close)"));
     assert.equal(copilotRequest.writeConfirmed, false);
     assert.equal(copilotRequest.mcpUrl, `${origin}/api/design-document/transact`);
     const progress = await fetch(`${origin}/api/design-document/jobs/${job.jobId}`, {

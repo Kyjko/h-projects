@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "transact-mcp": {
+      "tools": [
+        "*"
+      ],
+      "type": "http",
+      "url": "http://localhost:9189/mcp",
+      "headers": {}
+    },
+    "word-mcp-server": {
+      "tools": [
+        "*"
+      ],
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "C:\\\\path\\\\to\\\\word-mcp\\\\server.py"
+      ]
+    },
+    "playwright": {
+      "tools": [
+        "*"
+      ],
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ]
+    }
+  }
+}

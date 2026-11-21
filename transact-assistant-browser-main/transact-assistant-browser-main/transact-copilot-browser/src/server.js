@@ -1,14 +1,17 @@
 import { createServer as createHttpServer } from "node:http";
+import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
-import { buildPrompt, runCopilot } from "./copilot.js";
+import { buildPrompt, getCopilotCliDiagnostics, runCopilot, runCopilotLogin } from "./copilot.js";
 import {
   buildEsonPrompt,
   findReferenceEson,
+  findReferenceEsonExamples,
   listSkills,
   parseEsonAssistantAnswer,
   readSkillFile,
@@ -17,14 +20,28 @@ import {
   validateEsonRecords,
 } from "./local-tools.js";
 import {
+  buildL3AssistantPrompt,
+  collectProjectAssistantFiles,
+  getProjectOverview,
+  parseL3EditSuggestion,
+  projectPathForPrompt,
+  readProjectFile,
+  saveProjectFile,
+  searchProject,
+} from "./l3-project.js";
+import {
+  callAAActivity,
   callTransactAuthorise,
   callTransactInput,
   callTransactTool,
+  validateAAActivityArgs,
   validateAuthoriseRecordArgs,
   validateDirectToolCall,
 } from "./transact-mcp.js";
 import { isAppliedRecord, recordAmendment } from "./design-document/amendment-store.js";
 import { getDesignDocumentProxyUrl, handleDesignDocumentRequest } from "./design-document/routes.js";
+import { generateOFSMessage, getOFSMessageConfig, maskOFSMessage, parseOFSMessage } from "./ofs-message.js";
+import { createOFSQueue, getDatabaseConfiguration } from "./ofs-queue.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -35,7 +52,13 @@ const MAX_RECORD_INPUT_BYTES = 8 * 1024 * 1024;
 const MAX_MESSAGE_LENGTH = 6000;
 const MAX_HISTORY_ITEMS = 8;
 const MAX_COPILOT_TOOL_OUTPUT_BYTES = 32 * 1024 * 1024;
+const MAX_OFS_MESSAGE_BYTES = 256 * 1024;
 const WORKSPACE_ROOT = path.resolve(ROOT, "..");
+try {
+  loadEnvFile(path.join(ROOT, ".env.local"));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -52,6 +75,109 @@ function getMcpUrl() {
     throw new Error("TRANSACT_MCP_URL must point to a localhost HTTP endpoint.");
   }
   return url;
+}
+
+function diagnosticConfiguration(
+  getCopilotDiagnostics = getCopilotCliDiagnostics,
+  getDatabaseConfig = getDatabaseConfiguration,
+  getOFSConfig = getOFSMessageConfig,
+) {
+  let endpoint = "Invalid local MCP URL";
+  let endpointSource = "TRANSACT_MCP_URL";
+  try {
+    const url = getMcpUrl();
+    endpoint = `${url.protocol}//${url.host}${url.pathname}`;
+    if (!process.env.TRANSACT_MCP_URL) endpointSource = "Default (http://localhost:9189/mcp)";
+  } catch {
+    endpointSource = "TRANSACT_MCP_URL is invalid";
+  }
+  const configCandidates = [...new Set([
+    path.resolve(process.cwd(), "config.toml"),
+    path.join(ROOT, "config.toml"),
+    path.join(WORKSPACE_ROOT, "config.toml"),
+  ])];
+  const copilotDiagnostics = getCopilotDiagnostics();
+  return {
+    copilot: {
+      ...copilotDiagnostics,
+      configFiles: copilotDiagnostics.configFiles.map((file) => ({
+        ...file,
+        purpose: file.path.endsWith("mcp-config.json")
+          ? "Persistent MCP registrations, including word-mcp-server and playwright for design-document screenshots. This app injects Transact MCP per request."
+          : "Copilot CLI user settings. Authentication is managed by the CLI; file contents are intentionally not exposed.",
+      })),
+      settings: [
+        { name: "COPILOT_CLI_PATH", purpose: "Override the Copilot CLI executable path." },
+        { name: "COPILOT_CLI_ENTRY", purpose: "On Windows, override the Copilot CLI npm-loader.js path." },
+        { name: "Authentication", purpose: "Run `copilot login` in a terminal if the Assistant check reports unauthenticated." },
+      ],
+    },
+    transactMcp: {
+      endpoint,
+      endpointSource,
+      configFiles: configCandidates.map((filePath) => ({
+        path: filePath,
+        exists: existsSync(filePath),
+        purpose: "Transact MCP server config.toml candidate. The server may be launched from another working directory; this browser cannot infer that process's config path.",
+      })),
+      settings: [
+        { name: "TRANSACT_MCP_URL", value: endpoint, purpose: "HTTP endpoint the browser uses for direct requests and Assistant MCP calls." },
+        { name: "config.toml", purpose: "Change the Transact MCP server's transport and OFS connection settings in the config file used when starting that server. Restart it after changes." },
+      ],
+    },
+    database: getDatabaseConfig(),
+    ofsMessage: (() => {
+      const config = getOFSConfig();
+      return {
+        user: config.user,
+        noOfAuth: config.noOfAuth,
+        company: config.company,
+        passwordConfigured: Boolean(config.password),
+      };
+    })(),
+  };
+}
+
+function ofsInputErrors(result) {
+  return Array.isArray(result?.errors)
+    ? result.errors.map((error) => typeof error === "string"
+      ? error
+      : error?.message || error?.description || error?.code || JSON.stringify(error))
+    : [];
+}
+
+function redactOFSSecret(message) {
+  const password = getOFSMessageConfig().password;
+  return password ? String(message).replaceAll(password, "***") : String(message);
+}
+
+function classifyAssistantFailure(error) {
+  const message = String(error?.message || "");
+  if (/not authenticated|authentication required|authentication.*failed|please log in|please login|please sign in|sign[ -]?in required|not signed in|not logged in|unauthenticated|unauthorized|no valid.*token|(?:run|use)\s+\/?login\b|login required/i.test(message)) {
+    return { status: "unauthenticated", detail: "Copilot CLI is installed but is not authenticated. Run `copilot login`, then retry." };
+  }
+  if (/cannot locate copilot cli|could not start the transact assistant service|enoent|not recognized as an internal or external command/i.test(message)) {
+    return { status: "unavailable", detail: "Copilot CLI could not be launched. Install it or correct COPILOT_CLI_PATH / COPILOT_CLI_ENTRY." };
+  }
+  return { status: "failed", detail: "Copilot CLI did not complete the diagnostic request. Check its local installation and authentication." };
+}
+
+function classifyTransactFailure(error) {
+  const message = String(error?.message || "");
+  if (/ECONNREFUSED|fetch failed|could not reach|timed out|timeout/i.test(message)) {
+    return "Could not connect to the configured endpoint. Confirm the MCP server is running at the displayed URL.";
+  }
+  if (/HTTP 401|HTTP 403|unauthorized|forbidden/i.test(message)) {
+    return "The MCP endpoint rejected the request. Check its local authentication or access-control settings.";
+  }
+  if (/invalid.*url|TRANSACT_MCP_URL/i.test(message)) {
+    return "The configured MCP endpoint is invalid. Set TRANSACT_MCP_URL to a localhost HTTP endpoint.";
+  }
+  return "The web app could not call transact-context. Check the MCP server process, endpoint, and server-side OFS configuration.";
+}
+
+function diagnosticMcpUrl(port) {
+  return getDesignDocumentProxyUrl(port);
 }
 
 function sendJson(response, status, body) {
@@ -169,13 +295,17 @@ function validateRecordDesignBody(body) {
   if (!id || id.length > 256) {
     throw Object.assign(new Error("Enter a record ID between 1 and 256 characters."), { status: 400 });
   }
+  const version = typeof body.version === "string" ? body.version.trim().toUpperCase() : "";
+  if (version && !/^[A-Z0-9][A-Z0-9._-]{0,127}$/.test(version)) {
+    throw Object.assign(new Error("Enter a valid VERSION name."), { status: 400 });
+  }
   if (body.action === "submit" && body.confirm !== true) {
     throw Object.assign(new Error("Record submission requires explicit confirmation."), { status: 400 });
   }
   if (!Array.isArray(body.fields) || body.fields.length > 1000) {
     throw Object.assign(new Error("Record fields must be an array of at most 1,000 values."), { status: 400 });
   }
-  return { action: body.action, application, id, fields: body.fields };
+  return { action: body.action, application, id, ...(version ? { version } : {}), fields: body.fields };
 }
 
 function isRecordValidationPassed(validation) {
@@ -285,15 +415,34 @@ async function serveStatic(pathname, response) {
 
 export function createServer({
   copilot = runCopilot,
+  copilotLogin = runCopilotLogin,
+  copilotDiagnostics = getCopilotCliDiagnostics,
   transact = callTransactTool,
+  database = createOFSQueue(),
+  ofsMessageConfig = getOFSMessageConfig,
   recordInput = callTransactInput,
   recordRead = callTransactTool,
   recordAuthorise = callTransactAuthorise,
+  aaActivity = callAAActivity,
   saveAmendment = recordAmendment,
   listAmendments,
   selectAmendments,
   workspaceRoot = process.env.TRANSACT_BROWSER_WORKSPACE_ROOT || WORKSPACE_ROOT,
+  l3ProjectRoot = process.env.VMA_L3_JAVA_PROJECT || path.join(workspaceRoot, "VmaL3JavaP2"),
 } = {}) {
+  const javaProjectRoot = projectPathForPrompt(l3ProjectRoot);
+  async function checkOFSMessage(parsed) {
+    const url = getMcpUrl().toString();
+    if (parsed.operation === "S") {
+      return transact({
+        url,
+        tool: "ofs-read",
+        args: { application: parsed.application, id: parsed.id },
+      });
+    }
+    const { operation, ...args } = parsed;
+    return recordInput({ url, args: { ...args, validate_only: true } });
+  }
   let server;
   server = createHttpServer(async (request, response) => {
     let url;
@@ -337,6 +486,294 @@ export function createServer({
       } catch (error) {
         sendJson(response, 500, { ok: false, error: error.message });
       }
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/ofs/status") {
+      try {
+        const [connection, config] = await Promise.all([
+          database.checkConnection(),
+          Promise.resolve(ofsMessageConfig()),
+        ]);
+        sendJson(response, 200, {
+          ...connection,
+          messageProfile: {
+            user: config.user,
+            noOfAuth: config.noOfAuth,
+            company: config.company,
+            passwordConfigured: Boolean(config.password),
+          },
+        });
+      } catch (error) {
+        const config = ofsMessageConfig();
+        sendJson(response, 200, {
+          status: "failed",
+          detail: error.message || "PostgreSQL connection failed.",
+          messageProfile: {
+            user: config.user,
+            noOfAuth: config.noOfAuth,
+            company: config.company,
+            passwordConfigured: Boolean(config.password),
+          },
+        });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/ofs/queue") {
+      try {
+        const rows = await database.list();
+        const config = ofsMessageConfig();
+        sendJson(response, 200, {
+          rows: rows.map((row) => {
+            const message = typeof row.xmlrecord === "string" ? row.xmlrecord : JSON.stringify(row.xmlrecord ?? "");
+            return { recid: row.recid, message: maskOFSMessage(message, config) };
+          }),
+        });
+      } catch (error) {
+        sendJson(response, 503, { error: error.message || "OFS message queue could not be loaded." });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname.startsWith("/api/ofs/")) {
+      if (!isAllowedOrigin(request)) {
+        sendJson(response, 403, { error: "Requests must come from this local interface." });
+        return;
+      }
+      const requestId = randomUUID().slice(0, 8);
+      try {
+        const body = await readJsonBody(request, MAX_OFS_MESSAGE_BYTES + 1024);
+        const config = ofsMessageConfig();
+        if (url.pathname === "/api/ofs/generate") {
+          sendJson(response, 200, { message: generateOFSMessage(body, config) });
+          return;
+        }
+        if (url.pathname === "/api/ofs/validate" || url.pathname === "/api/ofs/queue") {
+          if (url.pathname === "/api/ofs/queue" && body?.confirm !== true) {
+            throw Object.assign(new Error("Adding an OFS message to the queue requires explicit confirmation."), { status: 400 });
+          }
+          const parsed = parseOFSMessage(body?.message, config);
+          const validation = await checkOFSMessage(parsed);
+          const errors = parsed.operation === "I" ? ofsInputErrors(validation) : [];
+          if (errors.length) {
+            throw Object.assign(new Error(`Transact validation rejected this OFS message: ${errors.join("; ")}`), {
+              status: 422,
+              result: validation,
+            });
+          }
+          if (url.pathname === "/api/ofs/validate") {
+            sendJson(response, 200, {
+              valid: true,
+              operation: parsed.operation,
+              application: parsed.application,
+              id: parsed.id,
+              ...(parsed.operation === "I" ? { fieldCount: parsed.fields.length } : {}),
+              result: validation,
+            });
+            return;
+          }
+          const recid = `T24-BROWSER-${randomUUID().toUpperCase()}`;
+          const savedId = await database.add(recid, body.message.trim());
+          sendJson(response, 201, { recid: savedId, operation: parsed.operation, validation });
+          return;
+        }
+        if (url.pathname === "/api/ofs/run") {
+          if (body?.confirm !== true) {
+            throw Object.assign(new Error("Running an OFS message requires explicit confirmation."), { status: 400 });
+          }
+          const hasMessage = typeof body.message === "string";
+          const hasRecid = typeof body.recid === "string" && body.recid.trim();
+          if (hasMessage === Boolean(hasRecid)) {
+            throw Object.assign(new Error("Provide either an OFS message or one queue record ID."), { status: 400 });
+          }
+          let message = body.message;
+          let recid;
+          if (hasRecid) {
+            recid = body.recid.trim();
+            const queued = await database.get(recid);
+            if (!queued) throw Object.assign(new Error(`OFS queue record ${recid} was not found.`), { status: 404 });
+            message = typeof queued.xmlrecord === "string" ? queued.xmlrecord : JSON.stringify(queued.xmlrecord ?? "");
+          }
+          const parsed = parseOFSMessage(message, config);
+          if (parsed.operation === "S") {
+            const result = await transact({
+              url: getMcpUrl().toString(),
+              tool: "ofs-read",
+              args: { application: parsed.application, id: parsed.id },
+            });
+            console.info(`[ofs:${requestId}] OFS read completed${recid ? ` for queue record ${recid}` : ""}.`);
+            sendJson(response, 200, { operation: "S", result, ...(recid ? { recid } : {}) });
+            return;
+          }
+          const { operation, ...args } = parsed;
+          const validation = await recordInput({
+            url: getMcpUrl().toString(),
+            args: { ...args, validate_only: true },
+          });
+          const validationErrors = ofsInputErrors(validation);
+          if (validationErrors.length) {
+            throw Object.assign(new Error(`Transact validation rejected this OFS message: ${validationErrors.join("; ")}`), {
+              status: 422,
+              result: validation,
+            });
+          }
+          const result = await recordInput({
+            url: getMcpUrl().toString(),
+            args: { ...args, validate_only: false },
+          });
+          const errors = ofsInputErrors(result);
+          if (errors.length) {
+            throw Object.assign(new Error(`Transact rejected this OFS message: ${errors.join("; ")}`), {
+              status: 422,
+              result,
+            });
+          }
+          console.info(`[ofs:${requestId}] OFS input completed${recid ? ` for queue record ${recid}` : ""}; state=${result?.state || "unknown"}.`);
+          sendJson(response, 200, { operation, result, ...(recid ? { recid } : {}) });
+          return;
+        }
+        if (url.pathname === "/api/ofs/queue/clear") {
+          if (body?.confirm !== true) {
+            throw Object.assign(new Error("Clearing the OFS queue requires explicit confirmation."), { status: 400 });
+          }
+          const deletedCount = await database.clear();
+          sendJson(response, 200, { deletedCount });
+          return;
+        }
+        sendJson(response, 404, { error: "Not found." });
+      } catch (error) {
+        const detail = redactOFSSecret(error.message || "The OFS message request could not be completed.");
+        console.error(`[ofs:${requestId}] Request failed: ${detail}`);
+        sendJson(response, error.status || 502, {
+          error: detail,
+          ...(error.result ? { result: error.result } : {}),
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/diagnostics/copilot-login") {
+      if (!isAllowedOrigin(request)) {
+        sendJson(response, 403, { error: "Requests must come from this local interface." });
+        return;
+      }
+      const requestId = randomUUID().slice(0, 8);
+      try {
+        await copilotLogin({ timeoutMs: 300_000 });
+        console.info(`[copilot-login:${requestId}] Local Copilot sign-in completed.`);
+        sendJson(response, 200, { authenticated: true });
+      } catch (error) {
+        console.error(`[copilot-login:${requestId}] Sign-in failed: ${error.message}`);
+        sendJson(response, error.status || 502, {
+          error: error.message || "Copilot sign-in did not complete.",
+        });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/diagnostics/run") {
+      if (!isAllowedOrigin(request)) {
+        sendJson(response, 403, { error: "Requests must come from this local interface." });
+        return;
+      }
+
+      const mcpUrl = (() => {
+        try {
+          return getMcpUrl();
+        } catch {
+          return null;
+        }
+      })();
+      const result = {
+        checkedAt: new Date().toISOString(),
+        configuration: diagnosticConfiguration(copilotDiagnostics, getDatabaseConfiguration, ofsMessageConfig),
+        checks: {
+          database: { status: "failed", detail: "PostgreSQL connection check did not complete." },
+          webToMcp: { status: "failed", detail: "Transact MCP tool check did not complete." },
+          assistant: { status: "unavailable", detail: "Copilot CLI check did not complete." },
+          assistantToMcp: { status: "not-tested", detail: "Requires a successful Assistant check." },
+          wordMcp: { status: "not-tested", detail: "Requires a successful Assistant check." },
+          screenshotMcp: { status: "not-tested", detail: "Requires a successful Assistant check." },
+        },
+      };
+
+      const [databaseCheck, mcpCheck, assistantCheck] = await Promise.allSettled([
+        database.checkConnection(),
+        mcpUrl
+          ? transact({ url: mcpUrl.toString(), tool: "transact-context", args: {} })
+          : Promise.reject(new Error("The configured Transact MCP URL is invalid.")),
+        copilot({
+          prompt: "Reply with exactly this text and nothing else: TRANSACT_ASSISTANT_DIAGNOSTIC_OK",
+          writeConfirmed: false,
+          includeTransactMcp: false,
+          timeoutMs: 90_000,
+        }),
+      ]);
+
+      result.checks.database = databaseCheck.status === "fulfilled"
+        ? databaseCheck.value
+        : { status: "failed", detail: databaseCheck.reason?.message || "Could not connect to the local t24 database." };
+
+      if (mcpCheck.status === "fulfilled") {
+        result.checks.webToMcp = { status: "connected", detail: "The web app successfully called the read-only transact-context MCP tool." };
+      } else {
+        result.checks.webToMcp = {
+          status: "failed",
+          detail: classifyTransactFailure(mcpCheck.reason),
+        };
+      }
+
+      if (assistantCheck.status === "fulfilled"
+          && assistantCheck.value.trim() === "TRANSACT_ASSISTANT_DIAGNOSTIC_OK") {
+        result.checks.assistant = { status: "connected", detail: "Copilot CLI launched, authenticated, and returned the expected diagnostic reply." };
+        const [assistantMcpCheck, wordMcpCheck, screenshotMcpCheck] = await Promise.allSettled([
+          copilot({
+            prompt: "For a read-only connectivity test, call the `transact-context` tool from the `transact-browser` MCP server exactly once. Reply exactly `TRANSACT_ASSISTANT_MCP_DIAGNOSTIC_OK` only if that tool call succeeds; otherwise reply exactly `TRANSACT_ASSISTANT_MCP_DIAGNOSTIC_FAILED`.",
+            mcpUrl: diagnosticMcpUrl(server.address()?.port || PORT),
+            writeConfirmed: false,
+            allowedTools: ["transact-browser(transact-context)"],
+            cwd: ROOT,
+            timeoutMs: 90_000,
+          }),
+          copilot({
+            prompt: "For a read-only connectivity test, call the registered `list_available_documents` tool on `word-mcp-server` exactly once. Reply exactly `WORD_MCP_DIAGNOSTIC_OK` only if that tool call succeeds; otherwise reply exactly `WORD_MCP_DIAGNOSTIC_FAILED`.",
+            includeTransactMcp: false,
+            writeConfirmed: false,
+            allowedTools: ["word-mcp-server(list_available_documents)"],
+            cwd: ROOT,
+            timeoutMs: 90_000,
+          }),
+          copilot({
+            prompt: "For a read-only connectivity test, call the registered `browser_tabs` tool on `playwright` exactly once. Reply exactly `SCREENSHOT_MCP_DIAGNOSTIC_OK` only if that tool call succeeds; otherwise reply exactly `SCREENSHOT_MCP_DIAGNOSTIC_FAILED`.",
+            includeTransactMcp: false,
+            writeConfirmed: false,
+            allowedTools: ["playwright(browser_tabs)"],
+            cwd: ROOT,
+            timeoutMs: 90_000,
+          }),
+        ]);
+        result.checks.assistantToMcp = assistantMcpCheck.status === "fulfilled"
+          && assistantMcpCheck.value.trim() === "TRANSACT_ASSISTANT_MCP_DIAGNOSTIC_OK"
+          ? { status: "connected", detail: "The Assistant successfully invoked transact-context through its request-scoped MCP connection." }
+          : { status: "failed", detail: "The Assistant could not confirm the required Transact MCP tool call. Check the MCP endpoint and Copilot MCP startup output." };
+        result.checks.wordMcp = wordMcpCheck.status === "fulfilled"
+          && wordMcpCheck.value.trim() === "WORD_MCP_DIAGNOSTIC_OK"
+          ? { status: "connected", detail: "The Assistant successfully called list_available_documents through the Word MCP server." }
+          : { status: "failed", detail: "The Assistant could not call list_available_documents through the Word MCP server. Check its local MCP registration and server startup." };
+        result.checks.screenshotMcp = screenshotMcpCheck.status === "fulfilled"
+          && screenshotMcpCheck.value.trim() === "SCREENSHOT_MCP_DIAGNOSTIC_OK"
+          ? { status: "connected", detail: "The Assistant successfully called browser_tabs through the Playwright MCP server." }
+          : { status: "failed", detail: "The Assistant could not call browser_tabs through the Playwright MCP server. Check its local MCP registration and server startup." };
+      } else if (assistantCheck.status === "rejected") {
+        result.checks.assistant = classifyAssistantFailure(assistantCheck.reason);
+        result.checks.assistantToMcp = { status: "not-tested", detail: "Requires a successful Assistant check." };
+      } else {
+        result.checks.assistant = { status: "failed", detail: "Copilot CLI replied, but not with the expected diagnostic response." };
+        result.checks.assistantToMcp = { status: "not-tested", detail: "Requires a successful Assistant check." };
+      }
+
+      sendJson(response, 200, result);
       return;
     }
 
@@ -431,6 +868,26 @@ export function createServer({
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/aa-arr-activity") {
+      if (!isAllowedOrigin(request)) {
+        sendJson(response, 403, { error: "Requests must come from this local interface." });
+        return;
+      }
+      const requestId = randomUUID().slice(0, 8);
+      const startedAt = Date.now();
+      try {
+        const args = validateAAActivityArgs(await readJsonBody(request, 96 * 1024));
+        console.info(`[aa-activity:${requestId}] ${args.simulate ? "Simulating" : "Submitting"} ${args.activity} for ${args.arrangement}.`);
+        const result = await aaActivity({ url: getMcpUrl().toString(), args });
+        console.info(`[aa-activity:${requestId}] ${args.simulate ? "Simulation" : "Activity"} completed in ${Date.now() - startedAt}ms; state=${result?.state || "unknown"}.`);
+        sendJson(response, 200, { result });
+      } catch (error) {
+        console.error(`[aa-activity:${requestId}] Failed after ${Date.now() - startedAt}ms: ${error.message}`);
+        sendJson(response, error.status || 502, { error: error.message || "AA arrangement activity could not be completed." });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/generate-eson" && request.method === "POST") {
       if (!isAllowedOrigin(request)) {
         sendJson(response, 403, { error: "Requests must come from this local interface." });
@@ -442,28 +899,142 @@ export function createServer({
         const body = await readJsonBody(request, 32 * 1024);
         const records = validateEsonRecords(body?.records);
         const skill = await readSkillFile(workspaceRoot, "generate-eson/SKILL.md");
-        const answer = await copilot({
-          prompt: buildEsonPrompt(records, skill),
-          mcpUrl: getDesignDocumentProxyUrl(server.address()?.port || PORT),
-          writeConfirmed: false,
-          cwd: workspaceRoot,
-          timeoutMs: 15 * 60 * 1000,
-          promptViaStdin: true,
-        });
-        const spooledOutput = await loadCopilotToolOutput(answer);
-        if (spooledOutput?.error) throw new Error(spooledOutput.error);
-        const assistantAnswer = spooledOutput?.data === undefined
-          ? answer
-          : typeof spooledOutput.data === "string" ? spooledOutput.data : JSON.stringify(spooledOutput.data);
-        const files = await saveGeneratedEsonFiles(
-          workspaceRoot,
-          parseEsonAssistantAnswer(assistantAnswer, records),
-        );
-        console.info(`[eson:${requestId}] Generated ${files.length} ESON file(s) in ${Date.now() - startedAt}ms.`);
-        sendJson(response, 200, { files });
+        const referenceExamples = await findReferenceEsonExamples(workspaceRoot, records);
+        const prompt = buildEsonPrompt(records, skill, referenceExamples);
+        const mcpUrl = getDesignDocumentProxyUrl(server.address()?.port || PORT);
+        let files;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const answer = await copilot({
+            prompt: attempt === 0
+              ? prompt
+              : `${prompt}\n\nRetry: the prior response was not a complete ESON bundle. Re-read the live records, follow the application reference structure, and return complete ESON rather than prose.`,
+            mcpUrl,
+            writeConfirmed: false,
+            cwd: workspaceRoot,
+            timeoutMs: 15 * 60 * 1000,
+            promptViaStdin: true,
+            contextTier: "long_context",
+          });
+          const spooledOutput = await loadCopilotToolOutput(answer);
+          if (spooledOutput?.error) throw new Error(spooledOutput.error);
+          const assistantAnswer = spooledOutput?.data === undefined
+            ? answer
+            : typeof spooledOutput.data === "string" ? spooledOutput.data : JSON.stringify(spooledOutput.data);
+          try {
+            files = parseEsonAssistantAnswer(assistantAnswer, records);
+            break;
+          } catch (error) {
+            if (attempt === 1 || error.status !== 502) throw error;
+            console.warn(`[eson:${requestId}] Copilot returned an invalid ESON bundle; retrying once.`);
+          }
+        }
+        if (!files) throw new Error("Copilot did not return an ESON bundle.");
+        const savedFiles = await saveGeneratedEsonFiles(workspaceRoot, files);
+        console.info(`[eson:${requestId}] Generated ${savedFiles.length} ESON file(s) in ${Date.now() - startedAt}ms.`);
+        sendJson(response, 200, { files: savedFiles });
       } catch (error) {
         console.error(`[eson:${requestId}] Generation failed after ${Date.now() - startedAt}ms: ${error.message}`);
         sendJson(response, error.status || 502, { error: error.message || "ESON generation failed." });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/l3/project" && request.method === "GET") {
+      try {
+        sendJson(response, 200, await getProjectOverview(javaProjectRoot));
+      } catch (error) {
+        sendJson(response, error.status || 500, { error: error.message || "Java project could not be loaded." });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/l3/file" && request.method === "GET") {
+      try {
+        sendJson(response, 200, await readProjectFile(javaProjectRoot, url.searchParams.get("path")));
+      } catch (error) {
+        sendJson(response, error.status || (error.code === "ENOENT" ? 404 : 500), {
+          error: error.message || "Java project file could not be opened.",
+        });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/l3/search" && request.method === "GET") {
+      try {
+        const q = url.searchParams.get("q");
+        const directory = url.searchParams.get("directory") || "";
+        sendJson(response, 200, await searchProject(javaProjectRoot, q, directory));
+      } catch (error) {
+        sendJson(response, error.status || (error.code === "ENOENT" ? 404 : 500), {
+          error: error.message || "Java project search failed.",
+        });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/l3/file" && request.method === "PUT") {
+      if (!isAllowedOrigin(request)) {
+        sendJson(response, 403, { error: "Requests must come from this local interface." });
+        return;
+      }
+      try {
+        const body = await readJsonBody(request, 1024 * 1024 + 16 * 1024);
+        const saved = await saveProjectFile(javaProjectRoot, body?.path, body?.content, body?.expectedHash);
+        sendJson(response, 200, saved);
+      } catch (error) {
+        sendJson(response, error.status || 500, { error: error.message || "Java file could not be saved." });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/l3/assistant" && request.method === "POST") {
+      if (!isAllowedOrigin(request)) {
+        sendJson(response, 403, { error: "Requests must come from this local interface." });
+        return;
+      }
+      const requestId = randomUUID().slice(0, 8);
+      const startedAt = Date.now();
+      try {
+        const body = await readJsonBody(request, 2 * 1024 * 1024);
+        if (!body || !["explain", "edit", "relevance"].includes(body.mode)
+            || typeof body.instruction !== "string" || body.instruction.length > 6000
+            || !Array.isArray(body.files) || body.files.length > 20
+            || (body.directory !== undefined && typeof body.directory !== "string")
+            || (body.openFile !== undefined && typeof body.openFile !== "string")
+            || (body.selection !== undefined && typeof body.selection !== "string")) {
+          throw Object.assign(new Error("Provide a supported Assistant mode, instruction, and project scope."), { status: 400 });
+        }
+        if (body.mode === "edit" && !body.openFile) {
+          throw Object.assign(new Error("Open a project file before requesting an edit."), { status: 400 });
+        }
+        const documents = await collectProjectAssistantFiles(javaProjectRoot, {
+          files: body.mode === "edit" ? [body.openFile] : body.files,
+          directory: body.directory || "",
+          openFile: body.mode === "edit" ? body.openFile : "",
+        });
+        const prompt = buildL3AssistantPrompt({
+          mode: body.mode,
+          instruction: body.instruction,
+          documents,
+          selection: body.selection || "",
+        });
+        const answer = await copilot({
+          prompt,
+          mcpUrl: getDesignDocumentProxyUrl(server.address()?.port || PORT),
+          writeConfirmed: false,
+          cwd: javaProjectRoot,
+          timeoutMs: 5 * 60 * 1000,
+          promptViaStdin: true,
+          contextTier: "long_context",
+        });
+        const result = body.mode === "edit"
+          ? { suggestion: parseL3EditSuggestion(answer, body.openFile) }
+          : { answer };
+        console.info(`[l3-assistant:${requestId}] ${body.mode} completed in ${Date.now() - startedAt}ms for ${documents.length} file(s).`);
+        sendJson(response, 200, result);
+      } catch (error) {
+        console.error(`[l3-assistant:${requestId}] Failed after ${Date.now() - startedAt}ms: ${error.message}`);
+        sendJson(response, error.status || 502, { error: error.message || "Java project Assistant request failed." });
       }
       return;
     }
@@ -566,6 +1137,7 @@ export function createServer({
           args: {
             application: requestData.application,
             id: requestData.id,
+            ...(requestData.version ? { version: requestData.version } : {}),
             fields: requestData.fields,
             confirm: true,
             validate_only: true,
@@ -581,6 +1153,7 @@ export function createServer({
           args: {
             application: requestData.application,
             id: requestData.id,
+            ...(requestData.version ? { version: requestData.version } : {}),
             fields: requestData.fields,
             confirm: true,
             validate_only: false,
@@ -624,6 +1197,11 @@ export function createServer({
       return;
     }
     await serveStatic(url.pathname, response);
+  });
+  server.once("close", () => {
+    if (typeof database.close === "function") {
+      void Promise.resolve(database.close()).catch((error) => console.error(`PostgreSQL pool could not close: ${error.message}`));
+    }
   });
   return server;
 }

@@ -111,7 +111,8 @@ export function unauthorisedRowId(row, columns = []) {
 
 async function reviewRecord(application, id) {
   const sequence = ++reviewSequence;
-  currentReview = { application, id };
+  const version = $("#authorise-version").value.trim().toUpperCase();
+  currentReview = { application, id, version };
   const review = $("#authorise-review");
   review.hidden = false;
   review.replaceChildren(node("p", "", `Reading ${application} · ${id} in unauthorised state…`));
@@ -128,7 +129,7 @@ async function reviewRecord(application, id) {
       authoriseButton.disabled = true;
       showStatus(`Authorising ${application} · ${id}…`);
       try {
-        const result = await authoriseRecord(application, id);
+        const result = await authoriseRecord(application, id, version);
         if (result?.state !== "live" || (Array.isArray(result.errors) && result.errors.length)) {
           const errors = Array.isArray(result?.errors) ? result.errors.map((entry) => {
             if (typeof entry === "string") return entry;
@@ -283,6 +284,13 @@ export function setAuthorisationMode(enabled) {
   $("#authorise-record-view").hidden = !enabled;
   $("#toggle-authorise-record").setAttribute("aria-pressed", String(enabled));
   $("#toggle-authorise-record").classList.toggle("is-selected", enabled);
+}
+
+export function openAuthorisationRecord(application, id, version = "") {
+  if (!active) $("#toggle-authorise-record").click();
+  $("#authorise-application").value = application;
+  $("#authorise-record-id").value = id;
+  $("#authorise-version").value = version;
 }
 
 export function initializeAuthorisation({ onEnter, onExit } = {}) {

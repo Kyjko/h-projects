@@ -1,0 +1,171 @@
+{
+  "locations": {
+    "C:\\path\\to\\loc": {
+      "tool_approvals": [
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "transact-context"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "ofs-read"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "app-fields"
+        },
+        {
+          "kind": "commands",
+          "commandIdentifiers": [
+            "Write-Output"
+          ]
+        },
+        {
+          "kind": "commands",
+          "commandIdentifiers": [
+            "python"
+          ]
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "copy_document"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "add_heading"
+        },
+        {
+          "kind": "write"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "playwright",
+          "toolName": "browser_navigate"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "add_paragraph"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "add_picture"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "ofs-enquiry"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "aa-product-summary"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "aa-condition-detail"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "arrangement-detail"
+        },
+        {
+          "kind": "commands",
+          "commandIdentifiers": [
+            "node",
+            "npm --version",
+            "copilot"
+          ]
+        },
+        {
+          "kind": "commands",
+          "commandIdentifiers": [
+            "npm test"
+          ]
+        },
+        {
+          "kind": "commands",
+          "commandIdentifiers": [
+            "Set-Location",
+            "npm start"
+          ]
+        },
+        {
+          "kind": "commands",
+          "commandIdentifiers": [
+            "Set-Location"
+          ]
+        },
+        {
+          "kind": "commands",
+          "commandIdentifiers": [
+            "Get-NetTCPConnection"
+          ]
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "get_document_outline"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "get_document_text"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "get_document_info"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "find_text_in_document"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "delete_paragraph"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "insert_line_or_paragraph_near_text"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "insert_numbered_list_near_text"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "replace_paragraph_block_below_header"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "replace_block_between_manual_anchors"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "word-mcp-server",
+          "toolName": "format_text"
+        },
+        {
+          "kind": "mcp",
+          "serverName": "transact-mcp",
+          "toolName": "app-schema"
+        }
+      ]
+    }
+  }
+}

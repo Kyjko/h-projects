@@ -22,6 +22,17 @@ test("read-only requests allow read tools and explicitly deny every mutation", (
   });
 });
 
+test("standalone diagnostic invocation can omit request-scoped MCP configuration", () => {
+  const args = buildCopilotArgs({
+    prompt: "diagnostic",
+    writeConfirmed: false,
+    includeTransactMcp: false,
+  });
+  assert.equal(args.includes("--additional-mcp-config"), false);
+  assert.equal(args.includes("--disable-mcp-server"), true);
+  assert.deepEqual(args.filter((arg) => arg.startsWith("--deny-tool=")), WRITE_TOOLS.map((tool) => `--deny-tool=transact-browser(${tool})`));
+});
+
 test("write tools are enabled only by request-scoped confirmation", () => {
   const args = buildCopilotArgs({
     prompt: "write",
@@ -62,6 +73,18 @@ test("large document prompts are supplied over stdin, not command-line arguments
   assert.ok(args.length < 100);
 });
 
+test("ESON generation can request a larger context tier", () => {
+  const args = buildCopilotArgs({
+    prompt: "Generate an ESON record.",
+    promptViaStdin: true,
+    mcpUrl: "http://127.0.0.1:4173/api/design-document/transact",
+    writeConfirmed: false,
+    contextTier: "long_context",
+  });
+  assert.ok(args.includes("--context"));
+  assert.ok(args.includes("long_context"));
+});
+
 test("prompt carries application context and read-only policy", () => {
   const prompt = buildPrompt({
     message: "show record",
@@ -73,6 +96,22 @@ test("prompt carries application context and read-only policy", () => {
   assert.match(prompt, /Current Transact application: CUSTOMER/);
   assert.match(prompt, /Current record ID: 123/);
   assert.match(prompt, /This request is read-only/);
+});
+
+test("assistant prompt limits responses to Transact workspace topics", () => {
+  const prompt = buildPrompt({
+    message: "How do I bake an apple pie?",
+    application: "",
+    recordId: "",
+    history: [],
+    writeConfirmed: false,
+  });
+  assert.match(prompt, /Transact data retrieval and operations/);
+  assert.match(prompt, /design-document review and editing/);
+  assert.match(prompt, /ESON generation/);
+  assert.match(prompt, /L3 Java development/);
+  assert.match(prompt, /Decline requests unrelated to these areas/);
+  assert.match(prompt, /answer only any clearly in-scope portion/);
 });
 
 test("record designer assistant mode is suggestion-only", () => {

@@ -1,0 +1,169 @@
+.version-search-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.version-search-form .explorer-field {
+  min-width: min(320px, 100%);
+  flex: 1;
+}
+
+.version-list,
+.version-detail-block {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #aebdc1;
+  background: #fff;
+}
+
+.version-list > h2,
+.version-detail-heading h2 {
+  margin: 0 0 10px;
+  color: #354c58;
+  font: 600 15px Calibri, Arial, sans-serif;
+}
+
+.version-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid #e1e7e8;
+}
+
+.version-list-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.version-list-info strong {
+  color: #344b58;
+  font: 600 13px Calibri, Arial, sans-serif;
+}
+
+.version-list-info code {
+  color: #62727a;
+  font: 10px Consolas, "Courier New", monospace;
+}
+
+.version-list-info p {
+  margin: 0;
+  color: #5b686e;
+  font: 11px Calibri, Arial, sans-serif;
+}
+
+.version-detail-host:empty {
+  display: none;
+}
+
+.version-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.version-compare-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.version-compare-controls .explorer-field {
+  min-width: min(260px, 100%);
+}
+
+.version-compare-controls select {
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 1px solid #adb9bf;
+  background: #fff;
+  color: #263b47;
+  font: 12px Calibri, Arial, sans-serif;
+}
+
+.version-record {
+  max-height: 55vh;
+  margin-top: 10px;
+}
+
+.version-comparison {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid #d5dddf;
+  background: #f7f9f9;
+}
+
+.version-comparison h3 {
+  margin: 0 0 8px;
+  color: #344b58;
+  font: 600 13px Calibri, Arial, sans-serif;
+}
+
+.version-field-changed {
+  background: #fff3e1;
+}
+
+.version-diff-table td,
+.version-diff-table th {
+  max-width: 380px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.version-loading {
+  color: #52636c;
+  font: 12px Calibri, Arial, sans-serif;
+}
+
+:root[data-theme="dark"] .version-list,
+:root[data-theme="dark"] .version-detail-block {
+  border-color: #465963;
+  background: #202d36;
+}
+
+:root[data-theme="dark"] .version-list > h2,
+:root[data-theme="dark"] .version-detail-heading h2,
+:root[data-theme="dark"] .version-list-info strong,
+:root[data-theme="dark"] .version-comparison h3 {
+  color: #e0e8ec;
+}
+
+:root[data-theme="dark"] .version-list-info code,
+:root[data-theme="dark"] .version-list-info p,
+:root[data-theme="dark"] .version-loading {
+  color: #b6c4ca;
+}
+
+:root[data-theme="dark"] .version-list-item {
+  border-color: #465963;
+}
+
+:root[data-theme="dark"] .version-comparison {
+  border-color: #465963;
+  background: #17232c;
+}
+
+:root[data-theme="dark"] .version-field-changed {
+  background: #4a3b25;
+}
+
+@media (max-width: 720px) {
+  .version-search-form,
+  .version-compare-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .version-list-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

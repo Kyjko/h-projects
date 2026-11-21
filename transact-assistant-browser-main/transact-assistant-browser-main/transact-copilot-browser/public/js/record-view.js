@@ -217,7 +217,10 @@ export function renderResult(answer, container) {
     return { title: "Transact Assistant response", subtitle: "Response from your local assistant.", raw: null };
   }
   const result = renderData(parsed.data, container);
-  if (parsed.narrative) result.subtitle = parsed.narrative;
+  if (parsed.narrative) {
+    result.subtitle = parsed.narrative;
+    result.narrative = parsed.narrative;
+  }
   else if (parsed.data?.state) result.subtitle = `Record returned in ${parsed.data.state} state.`;
   return result;
 }

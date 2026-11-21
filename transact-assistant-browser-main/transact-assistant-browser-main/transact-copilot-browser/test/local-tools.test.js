@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   buildEsonPrompt,
   findReferenceEson,
+  findReferenceEsonExamples,
   listSkills,
   parseEsonAssistantAnswer,
   readSkillFile,
@@ -115,8 +116,15 @@ test("reference ESON discovery searches nested folders and returns the containin
 
 test("ESON generation validates the response bundle and uses the reference skill prompt", async () => {
   const records = validateEsonRecords([{ company: "au0010001", application: "customer", id: "C-1" }]);
-  assert.match(buildEsonPrompt(records, "Follow the pattern."), /live reads use the company configured/);
-  assert.match(buildEsonPrompt(records, "Follow the pattern."), /Follow the pattern/);
+  const prompt = buildEsonPrompt(records, "Follow the pattern.", [{
+    application: "CUSTOMER",
+    filename: "AU0010001.CUSTOMER!EXAMPLE.data.eson",
+    content: "CUSTOMER { SHORT.NAME: \"Example\" }",
+  }]);
+  assert.match(prompt, /live reads use the company configured/);
+  assert.match(prompt, /Follow the pattern/);
+  assert.match(prompt, /Same-application ESON references/);
+  assert.match(prompt, /structure only/);
   const files = parseEsonAssistantAnswer(JSON.stringify({
     files: [{ company: "AU0010001", application: "CUSTOMER", id: "C-1", content: "CUSTOMER { CO.CODE: \"AU0010001\" }" }],
   }), records);
@@ -132,4 +140,24 @@ test("ESON generation rejects invalid answers and path-like record IDs", () => {
   const records = validateEsonRecords([{ company: "AU0010001", application: "CUSTOMER", id: "C-1" }]);
   assert.throws(() => parseEsonAssistantAnswer("not JSON", records), /required JSON/);
   assert.throws(() => validateEsonRecords([{ company: "AU0010001", application: "CUSTOMER", id: "../etc" }]), /valid company code/);
+  assert.throws(() => parseEsonAssistantAnswer(JSON.stringify({
+    files: [{ company: "AU0010001", application: "CUSTOMER", id: "C-1", content: "I could not produce ESON." }],
+  }), records), /invalid or incomplete ESON/);
+});
+
+test("ESON generation finds a nested example for each requested application", async () => {
+  await withWorkspace(async (root) => {
+    const directory = path.join(root, "reference_eson", "examples", "CUSTOMER");
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, "AU0010001.CUSTOMER!EXAMPLE.data.eson"), "CUSTOMER { SHORT.NAME: \"Example\" }");
+    await writeFile(path.join(directory, "AU0010001.ACCOUNT!EXAMPLE.data.eson"), "ACCOUNT {}");
+    const records = validateEsonRecords([
+      { company: "AU0010001", application: "CUSTOMER", id: "C-1" },
+      { company: "AU0010001", application: "CUSTOMER", id: "C-2" },
+      { company: "AU0010001", application: "ACCOUNT", id: "A-1" },
+    ]);
+    const examples = await findReferenceEsonExamples(root, records);
+    assert.deepEqual(examples.map(({ application }) => application), ["CUSTOMER", "ACCOUNT"]);
+    assert.match(examples[0].content, /SHORT\.NAME/);
+  });
 });

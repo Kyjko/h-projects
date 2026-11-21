@@ -7,6 +7,11 @@
     <title>Transact Browser</title>
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/styles/design-document.css">
+    <link rel="stylesheet" href="/styles/l3-developer.css">
+    <link rel="stylesheet" href="/styles/diagnostics.css">
+    <link rel="stylesheet" href="/styles/arrangement-manager.css">
+    <link rel="stylesheet" href="/styles/versions.css">
+    <link rel="stylesheet" href="/styles/ofs.css">
     <script type="module" src="/js/app.js"></script>
   </head>
   <body>
@@ -21,6 +26,9 @@
           <span id="connection-label">Checking connection…</span>
         </div>
         <div class="topbar-right">
+          <button id="open-diagnostics" class="assistant-toggle diagnostics-toggle" type="button" aria-pressed="false" aria-controls="diagnostic-view">
+            <span aria-hidden="true">⚠</span> Diagnostics
+          </button>
           <button id="toggle-design-document" class="assistant-toggle" type="button" aria-pressed="false">
             Edit design document
           </button>
@@ -52,6 +60,7 @@
               <button class="nav-subitem" type="button" data-menu-page="find-customer">Find Customer</button>
               <button class="nav-subitem" type="button" data-menu-page="find-account">Find Account</button>
               <button class="nav-subitem" type="button" data-menu-page="find-arrangement">Find Arrangement</button>
+              <button class="nav-subitem" type="button" data-menu-page="manage-arrangements">Manage Arrangements</button>
               <button class="nav-subitem" type="button" data-menu-page="locked-records">View Locked Records</button>
               <button class="nav-subitem" type="button" data-menu-page="customer-versions">View CUSTOMER Versions</button>
               <button class="nav-subitem" type="button" data-menu-page="payments-enquiry">Payments Enquiry</button>
@@ -64,6 +73,7 @@
             <div class="nav-submenu">
               <button class="nav-subitem" type="button" data-menu-page="configure-products">Configure Products</button>
               <button class="nav-subitem" type="button" data-menu-page="manage-tsa-service">Manage TSA Service</button>
+              <button class="nav-subitem" type="button" data-menu-page="versions">Versions</button>
             </div>
           </details>
           <details class="nav-menu">
@@ -73,6 +83,12 @@
               <button class="nav-subitem" type="button" data-menu-page="manage-skills">Manage Skills</button>
             </div>
           </details>
+          <button class="nav-item" type="button" data-menu-page="ofs">
+            <span class="nav-icon">⇄</span> OFS
+          </button>
+          <button class="nav-item" type="button" data-menu-page="l3-developer">
+            <span class="nav-icon">⌘</span> L3 Developer Tools
+          </button>
           <div class="nav-heading nav-heading-spaced">AVAILABLE TOOLS</div>
           <div class="tool-group">
             <span class="tool-group-label">READ</span>
@@ -96,6 +112,141 @@
         </aside>
 
         <main class="main-workspace">
+          <section id="diagnostic-view" class="diagnostic-view" hidden>
+            <div class="breadcrumb"><span>SYSTEM</span><span class="crumb-slash">/</span><span>DIAGNOSTICS</span></div>
+            <div class="diagnostic-title">
+              <div>
+                <p class="eyebrow">CONNECTION HEALTH</p>
+                <h1>Diagnostic view</h1>
+                <p class="record-subtitle">Run read-only checks for the web app, Assistant CLI, and the Transact, Word, and screenshot MCP connections used by this workflow.</p>
+              </div>
+              <div class="diagnostic-title-actions">
+                <button id="diagnostic-return" class="button button-secondary" type="button">Return to workspace</button>
+                <button id="run-diagnostics" class="button button-primary" type="button">Run diagnostics</button>
+              </div>
+            </div>
+            <p id="diagnostic-last-run" class="diagnostic-last-run" role="status" aria-live="polite">Run diagnostics to test all connections.</p>
+            <div id="diagnostic-checks" class="diagnostic-checks" aria-live="polite"></div>
+            <section class="diagnostic-auth-panel" aria-labelledby="diagnostic-auth-heading">
+              <div>
+                <h2 id="diagnostic-auth-heading">Manage local Copilot authentication</h2>
+                <p id="diagnostic-auth-status" role="status" aria-live="polite">Run diagnostics to check whether the local CLI is signed in.</p>
+                <p class="diagnostic-auth-note">Sign-in runs <code>copilot login --web-flow</code> on this computer and opens the browser-based GitHub authorization flow. Authentication tokens remain under Copilot CLI control and are not displayed in this app.</p>
+              </div>
+              <button id="copilot-login" class="button button-secondary" type="button">Sign in / refresh</button>
+            </section>
+            <div class="diagnostic-config-heading">
+              <div>
+                <h2>Configuration reference</h2>
+                <p>Local paths and effective non-secret settings to check when a connection fails.</p>
+              </div>
+            </div>
+            <div id="diagnostic-configuration" class="diagnostic-configuration">
+              <p class="diagnostic-config-empty">Configuration details appear after a diagnostic run.</p>
+            </div>
+          </section>
+          <section id="ofs-view" class="ofs-view" hidden>
+            <div class="breadcrumb"><span>EXPLORE</span><span class="crumb-slash">/</span><span>OFS</span></div>
+            <div class="ofs-heading">
+              <div>
+                <p class="eyebrow">OPEN FINANCIAL SERVICES</p>
+                <h1>OFS message inputter</h1>
+                <p class="record-subtitle">Generate, validate, queue, and execute supported Transact input messages using the local Transact MCP connection.</p>
+              </div>
+            </div>
+            <section class="ofs-database-status" aria-live="polite">
+              <div>
+                <strong id="ofs-database-state">Checking database…</strong>
+                <p id="ofs-database-detail">Testing the local t24 PostgreSQL connection.</p>
+              </div>
+              <button id="ofs-database-refresh" class="button button-secondary" type="button">Check database</button>
+            </section>
+            <p class="ofs-scope-note">Execution is restricted to function <code>I</code> (record input/amend), which is the operation supported by the configured MCP <code>ofs-input</code> tool. Other raw OFS functions are refused, not passed through.</p>
+            <div class="ofs-editor-grid">
+              <section class="ofs-panel" aria-labelledby="ofs-generator-heading">
+                <h2 id="ofs-generator-heading">Generate OFS message</h2>
+                <form id="ofs-generator-form" class="ofs-generator-form">
+                  <label class="ofs-field"><span>APPLICATION</span><input id="ofs-application" required maxlength="40" placeholder="e.g. CUSTOMER" autocomplete="off" spellcheck="false"></label>
+                  <label class="ofs-field"><span>VERSION (OPTIONAL)</span><input id="ofs-version" maxlength="128" placeholder="VERSION name" autocomplete="off" spellcheck="false"></label>
+                  <label class="ofs-field"><span>FUNCTION</span><select id="ofs-function"><option value="I">I · Input / amend</option><option value="S">S · Read</option></select></label>
+                  <label class="ofs-field"><span>RECORD ID</span><input id="ofs-record-id" required maxlength="256" placeholder="Record ID" autocomplete="off" spellcheck="false"></label>
+                  <label class="ofs-field ofs-field-wide"><span>MESSAGE DATA</span><textarea id="ofs-message-data" required rows="4" placeholder="FIELD=VALUE,FIELD:MV=VALUE"></textarea><small>Use comma-separated <code>FIELD=VALUE</code> pairs; repeat positions may use <code>FIELD:MV:SV=VALUE</code>.</small></label>
+                  <div class="ofs-profile ofs-field-wide">
+                    <span>USER / PASSWORD</span><strong>AUTHOR / 123456</strong>
+                    <span>NO.OF.AUTH / COMPANY</span><strong id="ofs-message-profile">Loading configured values…</strong>
+                  </div>
+                  <button class="button button-primary ofs-field-wide" type="submit">Generate OFS message</button>
+                </form>
+              </section>
+              <section class="ofs-panel" aria-labelledby="ofs-manual-heading">
+                <h2 id="ofs-manual-heading">Manual OFS message</h2>
+                <label class="ofs-field"><span>OFS MESSAGE</span><textarea id="ofs-message-editor" rows="10" spellcheck="false" placeholder="Generate a message above or enter a supported OFS input message"></textarea></label>
+                <div class="ofs-action-row">
+                  <button id="ofs-validate" class="button button-secondary" type="button">Validate OFS</button>
+                  <button id="ofs-add-queue" class="button button-secondary" type="button">Add to queue</button>
+                  <button id="ofs-run-manual" class="button button-primary" type="button">Run OFS</button>
+                </div>
+                <p id="ofs-operation-status" class="ofs-operation-status" role="status" aria-live="polite">A Transact validate-only request runs before any message is queued or submitted.</p>
+                <div id="ofs-operation-result" class="ofs-operation-result"></div>
+              </section>
+            </div>
+            <section class="ofs-queue-panel" aria-labelledby="ofs-queue-heading">
+              <div class="ofs-queue-heading">
+                <div>
+                  <h2 id="ofs-queue-heading">OFS message queue</h2>
+                  <p id="ofs-queue-status" role="status" aria-live="polite">Load the local F_OFS_MESSAGE_QUEUE to view pending messages.</p>
+                </div>
+                <div class="ofs-action-row">
+                  <button id="ofs-load-queue" class="button button-secondary" type="button">Load OFS messages from message queue</button>
+                  <button id="ofs-run-all" class="button button-primary" type="button" disabled>Run all OFS messages</button>
+                  <button id="ofs-stop-all" class="button button-secondary" type="button" hidden>Stop after current</button>
+                  <button id="ofs-clear-queue" class="button button-danger" type="button">Clear queue</button>
+                </div>
+              </div>
+              <div id="ofs-queue-list" class="ofs-queue-list" aria-live="polite"></div>
+            </section>
+          </section>
+          <section id="arrangement-manager-view" class="arrangement-manager-view" hidden>
+            <div class="breadcrumb"><span>USER MENU</span><span class="crumb-slash">/</span><span>MANAGE ARRANGEMENTS</span></div>
+            <div class="arrangement-manager-heading">
+              <div>
+                <p class="eyebrow">ARRANGEMENT ARCHITECTURE</p>
+                <h1>Manage Arrangements</h1>
+                <p class="record-subtitle">Review arrangement activities and create product-configured activities through the AA activity model.</p>
+              </div>
+            </div>
+            <form id="arrangement-lookup-form" class="arrangement-lookup">
+              <label class="designer-meta-field">
+                <span>AA.ARRANGEMENT ID</span>
+                <input id="arrangement-id-input" type="text" required maxlength="60" placeholder="e.g. AA26001ABCDEF" autocomplete="off" spellcheck="false">
+              </label>
+              <button id="arrangement-lookup-button" class="button button-primary" type="submit">Manage arrangement</button>
+              <button id="list-arrangements" class="button button-secondary" type="button">List arrangements</button>
+            </form>
+            <p id="arrangement-manager-status" class="arrangement-manager-status" role="status" aria-live="polite">Enter an arrangement ID to load its product, available activities, and activity history.</p>
+            <section id="arrangement-list" class="arrangement-list" hidden aria-label="Arrangements for company AU0010001"></section>
+            <section id="arrangement-summary" class="arrangement-summary" hidden></section>
+            <section id="arrangement-activity-history" class="arrangement-activity-history" hidden aria-labelledby="arrangement-history-heading">
+              <div class="arrangement-section-heading">
+                <div>
+                  <h2 id="arrangement-history-heading">Existing Activities</h2>
+                  <p>Recent live and pending activities for this arrangement.</p>
+                </div>
+                <button id="refresh-arrangement" class="button button-secondary" type="button">Refresh</button>
+              </div>
+              <div id="arrangement-history-list"></div>
+            </section>
+            <section id="arrangement-activity-types" class="arrangement-activity-types" hidden aria-labelledby="arrangement-activity-types-heading">
+              <div class="arrangement-section-heading">
+                <div>
+                  <h2 id="arrangement-activity-types-heading">Available Activities</h2>
+                  <p>Activity options are read from the product line and activity configuration in Transact.</p>
+                </div>
+              </div>
+              <div id="arrangement-activity-list" class="arrangement-activity-list"></div>
+            </section>
+            <section id="arrangement-activity-editor" class="arrangement-activity-editor" hidden aria-labelledby="arrangement-editor-heading"></section>
+          </section>
           <section id="record-browser-view" class="browser-view">
           <div class="breadcrumb"><span>WORKSPACE</span><span class="crumb-slash">/</span><span id="crumb-app">APPLICATION</span></div>
           <section class="context-bar" aria-label="Current record context">
@@ -109,6 +260,8 @@
               <input id="record-input" type="text" placeholder="Record ID or wildcard, e.g. AA.ARR..." autocomplete="off" spellcheck="false">
             </label>
             <button id="open-record" class="button button-primary" type="button">Open record</button>
+            <button id="open-version-record" class="button button-secondary" type="button" hidden>Open version record</button>
+            <button id="execute-application-command" class="button button-primary" type="button" hidden>Execute</button>
             <button id="list-records" class="button button-secondary" type="button">List records</button>
           </section>
           <div id="request-status" class="request-status" role="status" aria-live="polite" hidden>
@@ -168,6 +321,10 @@
                 <span>RECORD ID</span>
                 <input id="designer-record-id" type="text" placeholder="New ID or existing ID to amend" autocomplete="off" spellcheck="false">
               </label>
+              <label class="designer-meta-field">
+                <span>VERSION (OPTIONAL)</span>
+                <input id="designer-version" type="text" placeholder="VERSION name" autocomplete="off" spellcheck="false">
+              </label>
               <button id="load-designer-schema" class="button button-secondary" type="button">Load application</button>
             </div>
             <div class="designer-copy">
@@ -212,6 +369,10 @@
               <label class="designer-meta-field">
                 <span>RECORD ID (OPTIONAL)</span>
                 <input id="authorise-record-id" type="text" placeholder="Enter an unauthorised record ID" autocomplete="off" spellcheck="false">
+              </label>
+              <label class="designer-meta-field">
+                <span>VERSION (OPTIONAL)</span>
+                <input id="authorise-version" type="text" placeholder="VERSION name" autocomplete="off" spellcheck="false">
               </label>
               <button id="authorise-record-button" class="button button-primary" type="button">Review &amp; Authorise</button>
               <button id="list-unauthorised-records" class="button button-secondary" type="button">List unauthorised records</button>
@@ -304,6 +465,89 @@
             <div id="explorer-controls" class="explorer-controls"></div>
             <p id="explorer-status" class="explorer-status" role="status" aria-live="polite"></p>
             <div id="explorer-results" class="explorer-results scroll_contract_screen" aria-live="polite"></div>
+          </section>
+
+          <section id="l3-developer-view" class="l3-developer-view" hidden>
+            <div class="breadcrumb"><span>EXPLORE</span><span class="crumb-slash">/</span><span>L3 DEVELOPER TOOLS</span></div>
+            <header class="l3-project-heading">
+              <div>
+                <p class="eyebrow">JAVA PROJECT WORKSPACE</p>
+                <h1>VmaL3JavaP2</h1>
+                <p id="l3-project-location" class="record-subtitle">Loading project location…</p>
+              </div>
+              <div class="l3-project-stats"><span id="l3-project-stats">Loading project structure…</span></div>
+            </header>
+            <div class="l3-project-layout">
+              <aside class="l3-project-sidebar" aria-label="Java project files">
+                <form id="l3-search-form" class="l3-search-form">
+                  <label class="l3-search-label" for="l3-search-input">SEARCH PROJECT</label>
+                  <div class="l3-search-row">
+                    <input id="l3-search-input" type="search" placeholder="Keyword or ... wildcard" autocomplete="off">
+                    <button class="button button-secondary" type="submit">Search</button>
+                  </div>
+                  <p>Use <code>...</code> to match any text between fragments.</p>
+                </form>
+                <div id="l3-search-results" class="l3-search-results" hidden></div>
+                <div class="l3-tree-heading">
+                  <strong>PROJECT EXPLORER</strong>
+                  <button id="l3-refresh-tree" class="icon-button" type="button" title="Refresh project files" aria-label="Refresh project files">↻</button>
+                </div>
+                <div id="l3-project-tree" class="l3-project-tree" role="tree" aria-label="VmaL3JavaP2 files"></div>
+              </aside>
+              <div class="l3-editor-column">
+                <div class="l3-editor-toolbar">
+                  <div class="l3-open-file">
+                    <strong id="l3-open-file-title">No file open</strong>
+                    <span id="l3-file-status">Select a source file in the project explorer.</span>
+                  </div>
+                  <div class="l3-editor-actions">
+                    <button id="l3-undo" class="button button-secondary" type="button" disabled title="Undo (Ctrl+Z)">Undo</button>
+                    <button id="l3-redo" class="button button-secondary" type="button" disabled title="Redo (Ctrl+Y)">Redo</button>
+                    <button id="l3-save" class="button button-primary" type="button" disabled>Save</button>
+                  </div>
+                </div>
+                <div id="l3-editor-empty" class="l3-editor-empty">
+                  <strong>Project files appear here</strong>
+                  <span>Browse Java packages, search source, then select a file to inspect or edit.</span>
+                </div>
+                <div id="l3-editor-shell" class="l3-editor-shell" hidden>
+                  <div id="l3-line-numbers" class="l3-line-numbers" aria-hidden="true">1</div>
+                  <div class="l3-code-layer">
+                    <pre id="l3-highlighted-code" class="l3-highlighted-code" aria-hidden="true"></pre>
+                    <textarea id="l3-code-editor" class="l3-code-editor" spellcheck="false" wrap="off" aria-label="Project source editor"></textarea>
+                  </div>
+                </div>
+                <div id="l3-assistant" class="l3-assistant">
+                  <div class="l3-assistant-header">
+                    <div><strong>Developer Assistant</strong><span>Read-only Transact tools · edits require your approval</span></div>
+                    <span id="l3-assistant-status" role="status" aria-live="polite"></span>
+                  </div>
+                  <div id="l3-assistant-working" class="l3-assistant-working" role="status" aria-live="polite" hidden>
+                    <span class="l3-working-spinner" aria-hidden="true"></span>
+                    <div><strong>Assistant is working</strong><span id="l3-assistant-working-message">Reading the selected source…</span></div>
+                  </div>
+                  <label class="l3-instruction-label" for="l3-assistant-instruction">REQUEST</label>
+                  <textarea id="l3-assistant-instruction" rows="2" placeholder="Ask about this code or describe an edit to propose…"></textarea>
+                  <div class="l3-assistant-actions">
+                    <button id="l3-explain-file" class="button button-secondary" type="button">Explain Open File</button>
+                    <button id="l3-explain-selection" class="button button-secondary" type="button" disabled>Explain Selection</button>
+                    <button id="l3-explain-selected" class="button button-secondary" type="button" disabled>Explain Selected Files</button>
+                    <button id="l3-explain-folder" class="button button-secondary" type="button" disabled>Explain Folder</button>
+                    <button id="l3-propose-edit" class="button button-secondary" type="button" disabled>Suggest Edit</button>
+                    <button id="l3-find-transact" class="button button-secondary" type="button" disabled>Find Related Transact Data</button>
+                  </div>
+                  <div id="l3-assistant-answer" class="l3-assistant-answer" hidden></div>
+                  <section id="l3-edit-review" class="l3-edit-review" hidden>
+                    <div><strong id="l3-edit-summary">Proposed code change</strong><span>Review the replacement before applying it to the editor.</span></div>
+                    <pre id="l3-edit-diff" class="l3-edit-diff"></pre>
+                    <div class="l3-review-actions">
+                      <button id="l3-approve-edit" class="button button-primary" type="button">Approve and Apply to Editor</button>
+                      <button id="l3-reject-edit" class="button button-secondary" type="button">Reject Suggestion</button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
           </section>
         </main>
 
